@@ -44,3 +44,17 @@ En PC sin gafas, el aviso de que no se pudo iniciar un XR Loader es esperable cu
 ## Build Android de prueba
 
 Resultado: **no completado; no se generó APK**. La única ejecución, en batchmode con BuildPipeline para Android y la configuración existente, superó la compilación C# y la auditoría de escenas. El validador de `com.unity.xr.openxr` 1.16.1 lanzó una `NullReferenceException` en `MetaQuestFeature.CreateValidationRules` durante la validación previa. Unity continuó importando activos durante más de diez minutos sin producir resultado de build; se detuvo el proceso para evitar una espera indefinida en esta máquina de 7,5 GB de RAM. La excepción pertenece al paquete/configuración XR protegida, no al código de gameplay revisado. No se cambió Android/OpenXR ni se repitió el build. Los archivos de ajustes que Unity reescribió automáticamente durante el intento se restauraron a su contenido inicial; la verificación del APK queda **PENDIENTE PC/QUEST** en un entorno de build adecuado.
+
+## Integración backend e IA (rama `feature/integracion-backend-ia`)
+
+Fecha: 2026-10-16. Se corrigieron partes declaradas como CUMPLE que no entregaban datos útiles al backend FastAPI. Detalle y uso en `PARAMETROS_IA.txt`.
+
+- **Progresión:** antes solo se jugaba Nivel1. Ahora Siguiente sigue Nivel1 → Nivel3 → Nivel4 → Nivel5; Nivel2 sigue bloqueado y todo grado inicia en Nivel1.
+- **Nivel3:** había dos MetricsCollector activos; queda el de `Nivel3_AutoSetup`.
+- **Nivel4:** no había MetricsCollector, LevelBootstrap ni poller activos; `LevelManagers` quedó activo y su collector apunta a `NP_Spider_Level4`.
+- **Nivel5:** `LevelManagers` activo (poller y LevelBootstrap) sin collector duplicado; `NPLevel5Controller` deshabilitado.
+- **Métricas:** `headMovementFrequency` es el promedio del nivel; `avoidanceAttempts` cuenta episodios de retroceso ≥ 0,8 m/s; `BreathingGuide` ya no suma `breathingActivations` en Start; el respaldo de `GlobalSessionUI` usa `proximityMin = -1`.
+- **Red:** la URL del backend se anula con `backend_url.txt` en `persistentDataPath` o PlayerPrefs `NeuroPhobia.BackendUrl`; `insecureHttpOption` pasó de 0 a 2 (HTTP siempre permitido) con aprobación de la usuaria. Es el único cambio en ProjectSettings; XR y Packages no se tocaron.
+- **Comandos:** `pause` solo actúa en PLAYING (se ignora en LEVEL_COMPLETE y SESSION_END) y `resume` solo desde BREATHING; un cuerpo vacío o JSON inválido se trata como `none`.
+
+Verificación: Assembly-CSharp compila sin errores con el Roslyn de Unity 6000.3.7f1. Batchmode no se pudo usar porque el Editor tenía el proyecto abierto. **PENDIENTE PC/QUEST:** Play Mode, recorrido 1 → 3 → 4 → 5 y envío real a un FastAPI en la LAN.

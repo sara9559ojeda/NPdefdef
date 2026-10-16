@@ -15,14 +15,14 @@ Conteo: 17 campos de dominio serializados en SessionReport (5) y LevelMetrics (1
 | timestamp | string | Hora UTC ISO-8601 del inicio y después actualizada al cierre | DateTime.UtcNow.ToString("o") | SessionManager; FastAPIClient arma copia para start | Inicio y cierre de sesión | SessionReport y start payload | Sí, POST start; en reporte POST end | Sí, marca temporal |
 | level | int | Índice de nivel | componente/escena o nivel fijado en llamada | MetricsCollector.BuildMetrics; controladores | Al construir el registro | LevelMetrics y wrapper de métricas | Sí, POST metrics/end | Sí, segmentación por nivel |
 | gazeTimeOnSpider | float | Segundos mirando hacia araña estimados por raycast | acumulador en TrackGaze; algunos niveles lo sobrescriben con requerido | MetricsCollector; p. ej. Level2GazeTimer/Level4ContactTimer | Muestreo Update; copia al completar nivel | LevelMetrics | Sí, POST metrics/end | Sí, exposición visual; cuenta aproximada, depende de collider/raycast |
-| avoidanceAttempts | int | Conteo de ocasiones de movimiento interpretado como alejamiento de araña | comparación de distancia y desplazamiento muestreada | MetricsCollector.SampleMovement | Muestreo periódico, nominalmente cada 0.5 s | LevelMetrics | Sí, POST metrics/end | Sí, conducta espacial descriptiva; regla de código es heurística |
-| headMovementFrequency | float | Ángulo de cabeza dividido por intervalo y 90 (no una frecuencia Hz calibrada) | Quaternion.Angle de rotación del player | MetricsCollector.SampleMovement | Muestreo periódico, nominalmente cada 0.5 s | LevelMetrics | Sí, POST metrics/end | Posible predictor/señal de movimiento, con validación y unidades por aclarar |
+| avoidanceAttempts | int | Número de episodios de retroceso: la componente horizontal del desplazamiento del jugador en dirección opuesta a la araña más cercana alcanza `avoidanceRetreatSpeed` (0,8 m/s por defecto, Inspector). Un retroceso continuo cuenta una sola vez; el movimiento de la araña no cuenta | desplazamiento del player proyectado sobre el eje araña→player, por muestra | MetricsCollector.SampleMovement | Muestreo periódico, nominalmente cada 0.5 s | LevelMetrics | Sí, POST metrics/end | Sí, conducta espacial descriptiva; regla de código es heurística |
+| headMovementFrequency | float | Promedio del nivel de (ángulo de cabeza / intervalo / 90) por muestra; no es una frecuencia Hz calibrada | Quaternion.Angle de rotación del player, acumulado y promediado en BuildMetrics | MetricsCollector.SampleMovement | Muestreo periódico, nominalmente cada 0.5 s; 0 si no hubo muestras | LevelMetrics | Sí, POST metrics/end | Posible predictor/señal de movimiento, con validación y unidades por aclarar |
 | proximityMin | float | Menor distancia 3D entre player y spider muestreada; -1 si nunca se actualizó | Vector3.Distance en SampleMovement | MetricsCollector | Muestreo periódico | LevelMetrics | Sí, POST metrics/end | Sí, proximidad; susceptible a altura/cámara/rig |
 | taskCompletions | List<string> | IDs de tareas registradas | RegisterTaskCompletion; llamadas desde sistemas de tareas | MetricsCollector, TaskManager y task managers | Al completar tarea | LevelMetrics | Sí, POST metrics/end | Sí, secuencia/lista de eventos resumida |
-| breathingActivations | int | Número de activaciones registradas explícitamente | RegisterBreathingActivation | MetricsCollector; BreathingGuide y Level3AdaptiveCalmV2 llaman al registro | Cuando algún consumidor invoca registro | LevelMetrics | Sí, POST metrics/end | Potencial si el evento se conecta; hoy valor puede permanecer cero |
+| breathingActivations | int | Número de activaciones registradas explícitamente | RegisterBreathingActivation | MetricsCollector; solo Level3AdaptiveCalmV2 llama al registro (BreathingGuide ya no suma en Start) | Cuando se activa la calma adaptativa de Nivel3 | LevelMetrics | Sí, POST metrics/end | Potencial; en Nivel1, Nivel4 y Nivel5 hoy vale 0 |
 | levelPassed | bool | Resultado pasado entregado a BuildMetrics | argumento `passed` | quien llama BuildMetrics | Al crear LevelMetrics | LevelMetrics | Sí, POST metrics/end | Sí, resultado/etiqueta operacional |
 | sessionDuration | float | Duración del nivel desde Start del collector (Time.time) | reloj de nivel | MetricsCollector.BuildMetrics | Al construir métricas | LevelMetrics | Sí, POST metrics/end | Sí, duración por nivel |
-| levelAttempts | int | Contador de intentos registrados | RegisterLevelAttempt | MetricsCollector; BreathingGuide y Level3AdaptiveCalmV2 llaman al registro | Cuando consumidor registra intento | LevelMetrics | Sí, POST metrics/end | Potencial si se registra; puede permanecer cero |
+| levelAttempts | int | Contador de intentos registrados | RegisterLevelAttempt | MetricsCollector; solo NeuroPhobiaLevel2StableGaze (Nivel2, bloqueado) llama al registro | Cuando consumidor registra intento | LevelMetrics | Sí, POST metrics/end | Potencial si se registra; puede permanecer cero |
 | handWithdrawals | int | Número de retiros de mano registrados | RegisterHandWithdrawal | MetricsCollector; no se encontró enlace de evento confirmado | Cuando consumidor registra retiro | LevelMetrics | Sí, POST metrics/end | Potencial; captura efectiva pendiente |
 | handContactDuration | float | Acumulado de segundos suministrados mediante AddHandContactTime | Register/AddHandContactTime | MetricsCollector y consumidor externo, si lo hay | Durante/después de contacto manual | LevelMetrics | Sí, POST metrics/end | Potencial; captura efectiva pendiente |
 
@@ -56,10 +56,25 @@ Wrappers de transporte existentes:
 - POST `/api/session/metrics`: `{ sessionId, level, metrics }`
 - POST `/api/session/end`: `{ sessionId, fullReport }`
 - GET `/api/session/command/{sessionId}`; respuesta esperada `{ action }`.
-- Base URL por defecto: `http://localhost:8000` (`FastAPIClient.baseUrl`). No se encontró implementación FastAPI/backend en el inventario Unity.
+- Base URL por defecto: `http://localhost:8000` (`FastAPIClient.baseUrl`, objeto con SessionManager en MainMenu). No se encontró implementación FastAPI/backend en el inventario Unity.
+
+Cómo apuntar a un FastAPI en la LAN
+`FastAPIClient.Awake` resuelve la URL en este orden (la primera válida gana; debe empezar por http:// o https://, se quita la barra final):
+1. Archivo `backend_url.txt` en `Application.persistentDataPath` con una sola línea, p. ej. `http://192.168.1.50:8000`.
+   - Quest: `adb push backend_url.txt /sdcard/Android/data/com.neurophobia.app/files/backend_url.txt` (después reiniciar la app).
+   - PC/Editor: `%USERPROFILE%\AppData\LocalLow\NeuroPhobia\NeuroPhobia\backend_url.txt` (companyName y productName actuales).
+2. PlayerPrefs `NeuroPhobia.BackendUrl` (se puede fijar en runtime con `FastAPIClient.SetBaseUrl(url)`, que la guarda y la aplica).
+3. Valor serializado `baseUrl` del componente (Inspector).
+Al arrancar se registra en consola `NeuroPhobia: backend en <url>`.
+Requisitos de red: el servidor debe escuchar en todas las interfaces (`uvicorn main:app --host 0.0.0.0 --port 8000`), el firewall de Windows debe permitir el puerto 8000 y la Quest debe estar en la misma red. `localhost` en la Quest apunta a la propia Quest, no al PC.
+`ProjectSettings > Player > insecureHttpOption = 2` (Allow downloads over HTTP: Always allowed) permite `http://` en cualquier build; con 0 Android bloquea HTTP en claro.
 
 Comandos adaptativos actuales
-`AdaptiveCommandPoller` pregunta cada 5 s si existe SessionId. Solo contempla `pause` y `resume`. `pause` establece BREATHING durante 15 s; `resume` vuelve a PLAYING. Ante error HTTP se devuelve `none`. No se hallaron comandos para cambiar PhobiaGrade, velocidades, rutas u otros parámetros.
+`AdaptiveCommandPoller` (en `LevelManagers` de Nivel1, Nivel3, Nivel4 y Nivel5) pregunta cada 5 s (tiempo escalado) si existe SessionId. Solo contempla `pause` y `resume` (se normalizan a minúsculas y sin espacios).
+- `pause`: solo actúa en estado PLAYING; establece BREATHING durante 15 s y, al terminar, vuelve a PLAYING solo si el estado sigue siendo BREATHING. Se ignora en LEVEL_COMPLETE, SESSION_END, MENU, PAUSED (pausa manual) y BREATHING.
+- `resume`: solo actúa en BREATHING y vuelve a PLAYING.
+- Error HTTP, cuerpo vacío o JSON inválido (`JsonUtility.FromJson` protegido con try/catch) devuelven `none`.
+No se hallaron comandos para cambiar PhobiaGrade, velocidades, rutas u otros parámetros.
 
 A. Datos que YA EXISTEN
 Los 17 campos de la tabla y la lógica que intenta llenarlos. La calidad/actualización real varía: el código incluye varios métodos de registro cuyo consumidor no se encontró, y ciertas métricas se asignan solo al completar.
@@ -75,4 +90,24 @@ Rutas de referencia
 
 EL MÓDULO / MODELO DE INTELIGENCIA ARTIFICIAL NO FORMA PARTE DEL ALCANCE UNITY. Unity únicamente produce y expone los campos del SessionReport mediante JSON local y la interfaz FastAPIClient existente para un posible análisis externo futuro. No se implementa inferencia, entrenamiento ni análisis de IA en este nodo.
 
-Nota de interfaz: GlobalSessionUI registra el nivel completado o interrumpido con MetricsCollector.BuildMetrics(passed); SessionManager evita duplicar el mismo nivel. El resumen utiliza GetReport(). La asignación grado -> nivel inicial queda pendiente de definición; se mantiene la progresión inicial Nivel1.
+Nota de interfaz: GlobalSessionUI registra el nivel completado o interrumpido con MetricsCollector.BuildMetrics(passed); SessionManager evita duplicar el mismo nivel. El resumen utiliza GetReport(). La asignación grado -> nivel inicial queda pendiente de definición; todo grado inicia en Nivel1.
+
+Progresión de niveles (acordada)
+Nivel1 -> Nivel3 -> Nivel4 -> Nivel5. Nivel2 sigue bloqueado por falta de escenario. El botón Siguiente de `GlobalSessionUI` está activo en Nivel1, Nivel3 y Nivel4 (`NextLevelOf`); Nivel5 cierra la sesión con `TaskManager` y `GlobalSessionUI.ShowSessionSummary`. `LevelManager.UnlockNextLevel` también salta de 1 a 3. El MainMenu solo carga el nivel inicial (Nivel1).
+
+Un MetricsCollector activo por nivel (escenas)
+- Nivel1: `LevelManagers` (sin cambios).
+- Nivel3: `Nivel3_AutoSetup` (el que referencian Level3AdaptiveCalmV2 y Level3ProgressControllerV2); se eliminó el de `LevelManagers`, que no tenía araña.
+- Nivel4: `LevelManagers` activado (MetricsCollector level 4, LevelBootstrap y AdaptiveCommandPoller); su `spider` apunta a `NP_Spider_Level4`, la araña del flujo NPLevel4Controller. `Nivel4_AutoSetup` (flujo antiguo con su propio collector) sigue inactivo.
+- Nivel5: `MetricsCollector_Nivel5` (usado por TaskManager y Level5SpawnManager, que le pasa las arañas instanciadas). `LevelManagers` activado sin su MetricsCollector, para conservar solo el poller y LevelBootstrap. `NPLevel5Controller` (flujo fábrica/orbes) deshabilitado: ya no activa `L5_Orb_1`.
+`GlobalSessionUI.Capture` usa `FindFirstObjectByType<MetricsCollector>()`; con un único collector activo por escena el resultado es determinista. Si no hay collector, el LevelMetrics de respaldo usa `proximityMin = -1`.
+
+Registro de cambios (rama feature/integracion-backend-ia)
+- MetricsCollector: headMovementFrequency = promedio del nivel; avoidanceAttempts por episodios de retroceso >= 0,8 m/s (antes exigía > 2 m en ~0,5 s, unos 4 m/s, y no se disparaba a 1,6 m/s).
+- BreathingGuide: ya no suma breathingActivations en Start (en Nivel1 sumaba 2 fijas, una por esfera).
+- GlobalSessionUI: respaldo con proximityMin = -1; progresión 1 -> 3 -> 4 -> 5.
+- FastAPIClient: URL configurable (archivo, PlayerPrefs o Inspector) y respuesta de comando tolerante a cuerpo vacío o inválido.
+- AdaptiveCommandPoller: reglas de estado descritas arriba.
+- ProjectSettings: insecureHttpOption 0 -> 2.
+- Escenas Nivel3, Nivel4 y Nivel5: collectors y poller como se describe arriba.
+Verificación: compilación de Assembly-CSharp sin errores con el Roslyn de Unity 6000.3.7f1 (el Editor tenía el proyecto abierto, así que no se pudo usar batchmode). Pendiente: Play Mode en PC y prueba en Quest contra un FastAPI real.
