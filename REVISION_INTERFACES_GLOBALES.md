@@ -9,7 +9,7 @@
 - `GameStateManager` pausa arañas en PAUSED/LEVEL_COMPLETE/SESSION_END. La pausa usa `Time.timeScale = 0`; la UI usa eventos independientes del tiempo de juego.
 - La salida de emergencia agrega métricas disponibles con `levelPassed = false`, cierra el reporte local y vuelve a MainMenu.
 - Las finalizaciones conectadas agregan métricas una sola vez por nivel. Nivel1 y Nivel4 no avanzan automáticamente a los escenarios pendientes. Nivel3 ofrece avance manual a Nivel4.
-- `SessionManager` conserva `phobiaGrade`, mide la duración total con reloj real, evita cierres y registros duplicados y expone `ResolveInitialLevel` como lugar explícito para la tabla futura de la cliente. Por ahora retorna Nivel1 para todo grado válido.
+- `SessionManager` conserva `phobiaGrade`, mide la duración total con reloj real, evita cierres y registros duplicados y expone `ResolveInitialLevel` como lugar explícito para la tabla futura de asignación. Por ahora retorna Nivel1 para todo grado válido.
 - Se conserva `FastAPIClient` y su comportamiento no bloqueante ante fallos de red.
 
 ## Scripts nuevos
@@ -45,6 +45,6 @@ Ningún archivo `.unity`. La escena MainMenu ya contiene `NeuroPhobiaMainMenuMod
 
 - Nivel2: bloqueado por escenario nuevo no presente en repositorio.
 - Nivel5: escenario de apartamento y configuración visual posterior; después enlazar TaskManager, SpawnManager, PhobiaGrade, HUD, métricas y SessionReport.
-- Tabla grado → nivel: pendiente de definición de la cliente.
+- Tabla grado → nivel: pendiente de definición.
 - Pruebas PC/Quest y selección de una acción física segura para pausa en Quest.
 - Backend, base de datos, IA y persistencia real del perfil: fuera de alcance.

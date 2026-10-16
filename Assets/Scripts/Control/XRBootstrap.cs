@@ -43,10 +43,15 @@ internal sealed class XRBootstrap : MonoBehaviour
 
         XRManagerSettings manager = settings.Manager;
 
-        if (manager.activeLoader == null)
+        if (manager.activeLoader != null)
         {
-            yield return manager.InitializeLoader();
+            // XR Management ya lo inicializó y arrancó (caso normal en Android/Quest).
+            // Volver a arrancar los subsistemas OpenXR puede bloquear la sesión.
+            Destroy(gameObject);
+            yield break;
         }
+
+        yield return manager.InitializeLoader();
 
         if (manager.activeLoader == null)
         {

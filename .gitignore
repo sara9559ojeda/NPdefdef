@@ -9,6 +9,8 @@
 [Bb]uild/
 [Bb]uilds/
 [Aa]_BackUpThisFolder_ButDontShipItWithYourGame/
+*_BackUpThisFolder_ButDontShipItWithYourGame/
+NeuroPhobia_BurstDebugInformation_DoNotShip/
 
 # Builds exportados (apk/exe/etc.)
 *.apk

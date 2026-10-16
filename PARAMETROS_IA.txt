@@ -1,5 +1,5 @@
 PARÁMETROS UNITY PARA INTEGRACIÓN POSTERIOR
-Proyecto: NeuroPhobia_CLIENTE_FUNCIONAL
+Proyecto: NeuroPhobia_FUNCIONAL
 
 Alcance y cautela
 Este inventario describe solo datos que aparecen en el código actual. No implementa IA ni propone/inventa variables de captura. Un campo “podría consumirse” indica compatibilidad técnica potencial como dato de entrada/etiqueta, no que exista modelo, entrenamiento, evaluación clínica o interpretación validada.
@@ -75,4 +75,4 @@ Rutas de referencia
 
 EL MÓDULO / MODELO DE INTELIGENCIA ARTIFICIAL NO FORMA PARTE DEL ALCANCE UNITY. Unity únicamente produce y expone los campos del SessionReport mediante JSON local y la interfaz FastAPIClient existente para un posible análisis externo futuro. No se implementa inferencia, entrenamiento ni análisis de IA en este nodo.
 
-Nota de interfaz: GlobalSessionUI registra el nivel completado o interrumpido con MetricsCollector.BuildMetrics(passed); SessionManager evita duplicar el mismo nivel. El resumen utiliza GetReport(). La asignación grado -> nivel inicial queda pendiente de la tabla definida por la cliente; se mantiene la progresión inicial Nivel1.
+Nota de interfaz: GlobalSessionUI registra el nivel completado o interrumpido con MetricsCollector.BuildMetrics(passed); SessionManager evita duplicar el mismo nivel. El resumen utiliza GetReport(). La asignación grado -> nivel inicial queda pendiente de definición; se mantiene la progresión inicial Nivel1.

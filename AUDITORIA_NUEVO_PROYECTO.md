@@ -1,7 +1,7 @@
-﻿# Auditoría preliminar — NeuroPhobia cliente funcional
+# Auditoría preliminar — NeuroPhobia funcional
 
 Fecha: 2026-10-11  
-Raíz inspeccionada: `C:\Users\USUARIO\Documents\NeuroPhobia_CLIENTE_FUNCIONAL`  
+Raíz inspeccionada: `C:\Users\USUARIO\Documents\NeuroPhobia_FUNCIONAL`
 Alcance: inspección estática de archivos y serialización YAML. No se abrieron ni guardaron escenas, no se ejecutaron builds ni pruebas y no se cambiaron configuraciones Unity.
 
 ## Identidad y control de versiones
@@ -108,6 +108,4 @@ El esquema serializable contiene **17 campos**: 5 en `SessionReport` y 12 en `Le
 ## Límites de esta auditoría
 
 YAML evidencia referencias y valores serializados; no prueba resultados en ejecución, visibilidad efectiva, dependencias resueltas, errores de compilación, framerate, interacción de manos/controladores ni compatibilidad Quest. Pendientes concretos quedan en `CHECKLIST_PRELIMINAR.md`.
-
-
 

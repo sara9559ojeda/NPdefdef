@@ -1,5 +1,5 @@
 ﻿BORRADOR — PARÁMETROS EXISTENTES PARA ANÁLISIS POSTERIOR
-Proyecto: NeuroPhobia_CLIENTE_FUNCIONAL
+Proyecto: NeuroPhobia_FUNCIONAL
 
 Alcance y cautela
 Este inventario describe solo datos que aparecen en el código actual. No implementa IA ni propone/inventa variables de captura. Un campo “podría consumirse” indica compatibilidad técnica potencial como dato de entrada/etiqueta, no que exista modelo, entrenamiento, evaluación clínica o interpretación validada.

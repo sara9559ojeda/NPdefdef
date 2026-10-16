@@ -10,7 +10,7 @@ Build Settings habilita, en orden, `MainMenu`, `Nivel1`, `Nivel2`, `Nivel3`, `Ni
 |---|---|---|
 | MainMenu | Bienvenida, consentimiento, aceptación, salida, evaluación PhobiaGrade 1–5, Mis Datos con validación local y controles. | Prueba de interacción PC/Quest. |
 | Nivel1 | HUD, flujo de exposición, pausa, métricas y resultado conectados. El avance a Nivel2 queda bloqueado. | Validación física Quest. |
-| Nivel2 | **PENDIENTE NIVEL2 / BLOQUEADO.** | La cliente cambió el escenario, pero el escenario nuevo no está en la entrega oficial. Esta rama contiene un parque histórico recuperado; no se asume que corresponda al escenario nuevo. La escena quedó intacta en esta revisión. |
+| Nivel2 | **PENDIENTE NIVEL2 / BLOQUEADO.** | El escenario cambió, pero el nuevo no está en la entrega oficial. Esta rama contiene un parque histórico recuperado; no se asume que corresponda al escenario nuevo. La escena quedó intacta en esta revisión. |
 | Nivel3 | HUD, interacción existente, pausa, métricas, resultado y transición manual a Nivel4. | Validación física Quest. |
 | Nivel4 | Terrario/interacción existente, HUD, pausa, métricas, resultado y transición manual a Nivel5. | Validación física Quest. |
 | Nivel5 | Apartamento aprobado conservado: sala, cocina, cuarto, baño, paredes URP, techo `08_TECHO`, lámpara, puerta, refrigerador, ventana y cinco spawn points. Cuatro tareas oficiales y cierre de sesión conectados. | Validar interacción, apertura, movimiento, colisiones y legibilidad en Quest. |

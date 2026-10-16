@@ -1,6 +1,6 @@
 ﻿# Revisión final de Nivel2 — 2026-10-11
 
-> **Estado vigente: PENDIENTE NIVEL2 / BLOQUEADO.** Esta revisión describe un parque recuperado de un commit antiguo y presente en la rama de trabajo. La cliente comunicó que cambió el escenario, pero el escenario nuevo no está en el repositorio oficial entregado. El parque histórico no se puede tratar como ese escenario nuevo ni como validación final de gameplay. `Nivel2.unity` no se modificó en la auditoría final. Véanse `CHECKLIST_FINAL.md` y `ESTADO_FINAL_ENTREGA.md`.
+> **Estado vigente: PENDIENTE NIVEL2 / BLOQUEADO.** Esta revisión describe un parque recuperado de un commit antiguo y presente en la rama de trabajo. El escenario cambió, pero el nuevo no está en el repositorio oficial entregado. El parque histórico no se puede tratar como ese escenario nuevo ni como validación final de gameplay. `Nivel2.unity` no se modificó en la auditoría final. Véanse `CHECKLIST_FINAL.md` y `ESTADO_FINAL_ENTREGA.md`.
 
 ## Escena guardada
 

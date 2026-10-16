@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using UnityEngine.XR;
 using UnityEngine.XR.Interaction.Toolkit.UI;
 
 /// <summary>
@@ -16,7 +17,13 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
 {
     private const string UiRootName = "NP_UI_Menu_Moderno";
 
+    // Ajustes del menú en espacio mundo (VR / Meta Quest).
+    private const float VrCanvasDistance = 1.5f;
+    private const float VrCanvasScale = 0.0012f; // 1440 px -> ~1.73 m de ancho (~60 grados de campo visual)
+    private const float VrFollowSpeed = 4f;
+
     private GameObject uiRoot;
+    private Transform vrCanvasTransform;
     private GameObject mainPanel;
     private GameObject levelsPanel;
     private GameObject instructionsPanel;
@@ -63,17 +70,39 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         uiRoot.transform.SetParent(transform, false);
 
         Canvas canvas = uiRoot.AddComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceCamera;
-        canvas.worldCamera = FindGameplayCamera();
-        canvas.planeDistance = 1.5f;
-        canvas.overrideSorting = true;
-        canvas.sortingOrder = 30000;
-
+        bool vr = Application.isMobilePlatform || XRSettings.isDeviceActive;
         CanvasScaler scaler = uiRoot.AddComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1440f, 900f);
-        scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
-        scaler.matchWidthOrHeight = 0.5f;
+
+        if (vr)
+        {
+            // En gafas un canvas de pantalla ocupa todo el campo de visión.
+            // Se usa un panel en espacio mundo con tamaño físico fijo.
+            canvas.renderMode = RenderMode.WorldSpace;
+            canvas.worldCamera = FindGameplayCamera();
+
+            RectTransform rect = uiRoot.GetComponent<RectTransform>();
+            rect.sizeDelta = new Vector2(1440f, 900f);
+            rect.localScale = Vector3.one * VrCanvasScale;
+            vrCanvasTransform = rect;
+
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
+            scaler.dynamicPixelsPerUnit = 2f;
+            ShowOnlyMenuInVr(canvas.worldCamera);
+            PlaceInFrontOfCamera(true);
+        }
+        else
+        {
+            canvas.renderMode = RenderMode.ScreenSpaceCamera;
+            canvas.worldCamera = FindGameplayCamera();
+            canvas.planeDistance = 1.5f;
+            canvas.overrideSorting = true;
+            canvas.sortingOrder = 30000;
+
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1440f, 900f);
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+            scaler.matchWidthOrHeight = 0.5f;
+        }
 
         uiRoot.AddComponent<TrackedDeviceGraphicRaycaster>();
 
@@ -82,7 +111,68 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         BuildInstructionsPanel(uiRoot.transform);
         BuildSessionPanels(uiRoot.transform);
 
+        if (vrCanvasTransform != null)
+        {
+            ShowOnlyMenuInVr(canvas.worldCamera);
+        }
+
         ShowMain();
+    }
+
+    // Sin skybox: el cartel se ve sobre fondo sólido (los controles siguen visibles).
+    private void ShowOnlyMenuInVr(Camera cam)
+    {
+        const int uiLayer = 5;
+        foreach (Transform t in uiRoot.GetComponentsInChildren<Transform>(true))
+        {
+            t.gameObject.layer = uiLayer;
+        }
+
+        if (cam != null)
+        {
+            cam.clearFlags = CameraClearFlags.SolidColor;
+            cam.backgroundColor = Background;
+        }
+    }
+
+    private void LateUpdate()
+    {
+        if (vrCanvasTransform != null)
+        {
+            PlaceInFrontOfCamera(false);
+        }
+    }
+
+    // Mantiene el panel frente al jugador con seguimiento suave (sin pegarlo a la cabeza).
+    private void PlaceInFrontOfCamera(bool snap)
+    {
+        Camera cam = FindGameplayCamera();
+        if (cam == null || vrCanvasTransform == null)
+        {
+            return;
+        }
+
+        Vector3 forward = cam.transform.forward;
+        forward.y = 0f;
+        if (forward.sqrMagnitude < 0.0001f)
+        {
+            forward = Vector3.forward;
+        }
+        forward.Normalize();
+
+        Vector3 targetPos = cam.transform.position + forward * VrCanvasDistance;
+        Quaternion targetRot = Quaternion.LookRotation(forward, Vector3.up);
+
+        if (snap)
+        {
+            vrCanvasTransform.SetPositionAndRotation(targetPos, targetRot);
+            return;
+        }
+
+        float t = 1f - Mathf.Exp(-VrFollowSpeed * Time.unscaledDeltaTime);
+        vrCanvasTransform.SetPositionAndRotation(
+            Vector3.Lerp(vrCanvasTransform.position, targetPos, t),
+            Quaternion.Slerp(vrCanvasTransform.rotation, targetRot, t));
     }
 
     private void BuildBackground(Transform parent)

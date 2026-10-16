@@ -4,14 +4,14 @@
 |---|---|---|
 | Unity y Build Settings | CUMPLE | Unity 6000.3.7f1; MainMenu, Nivel1, Nivel2, Nivel3, Nivel4 y Nivel5 habilitados en ese orden. |
 | Bienvenida y consentimiento | CUMPLE | MainMenu muestra bienvenida, aceptación y salida antes de la evaluación. |
-| PhobiaGrade 1–5 | CUMPLE | La selección llama `StartSession(grade)` y llega a `SessionReport.phobiaGrade`; todo grado inicia en Nivel1 hasta que la cliente defina otra progresión. |
+| PhobiaGrade 1–5 | CUMPLE | La selección llama `StartSession(grade)` y llega a `SessionReport.phobiaGrade`; todo grado inicia en Nivel1 hasta que se defina otra progresión. |
 | Perfil visual | CUMPLE | Nombre y correo se validan y conservan solo en memoria durante la ejecución. |
 | Controles y MainMenu | CUMPLE | Pantalla de información, navegación y salida disponibles. |
 | Pausa global | CUMPLE | `GlobalSessionUI` usa `GameStateManager`; no hay `PauseManager` paralelo. Validación física pendiente. |
 | Salida de emergencia | CUMPLE | Captura el nivel interrumpido con `levelPassed=false`, cierra la sesión y vuelve a MainMenu. |
 | Resultado y resumen | CUMPLE | `CanvasLevelComplete` en niveles 1, 3 y 4; `CanvasSessionSummary` lee el `SessionReport` real. Retroalimentación descriptiva, sin diagnóstico. |
 | Nivel1 | CUMPLE | Flujo, HUD, pausa, métricas y resultado conectados; avance a Nivel2 bloqueado deliberadamente. |
-| Nivel2 | PENDIENTE NIVEL2 | El escenario nuevo de la cliente no está disponible. `Nivel2.unity` de esta rama contiene un parque histórico; no se asume que sea el nuevo escenario aprobado y la escena no se modificó. |
+| Nivel2 | PENDIENTE NIVEL2 | El escenario nuevo no está disponible. `Nivel2.unity` de esta rama contiene un parque histórico; no se asume que sea el nuevo escenario aprobado y la escena no se modificó. |
 | Nivel3 | CUMPLE | Flujo, HUD, pausa, métricas, resultado y transición manual a Nivel4 conectados. |
 | Nivel4 | CUMPLE | Interacción existente, HUD, pausa, métricas, resultado y transición manual a Nivel5 conectados. |
 | Nivel5 visual | CUMPLE | Apartamento aprobado, sala, cocina, cuarto, baño, paredes URP, `08_TECHO`, lámpara, puerta, nevera, ventana y cinco spawn points conservados. |

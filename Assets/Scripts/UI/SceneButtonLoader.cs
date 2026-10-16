@@ -20,7 +20,7 @@ public class SceneButtonLoader : MonoBehaviour
 
     public void LoadNivel2()
     {
-        Debug.LogWarning("Nivel2 bloqueado: escenario nuevo de la cliente no presente en repositorio.");
+        Debug.LogWarning("Nivel2 bloqueado: escenario nuevo de x no presente en repositorio.");
     }
 
     public void LoadNivel3()

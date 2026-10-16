@@ -10,7 +10,7 @@ Estados limitados a: CUMPLE, NO CUMPLE, PENDIENTE DE PRUEBA PC, PENDIENTE DE PRU
 | Nivel3 presente y componentes de flujo | CUMPLE | Habilitada; patrulla, secuencia de orbes, guardia de visibilidad, HUD progreso serializados | `Assets/Scenes/Nivel3.unity` | Probar checkpoints/orbes, salida, UI y controles PC/Quest |
 | Nivel4 presente y controlador | CUMPLE | Habilitada; controlador Level45 y patrulla referenciados | `Assets/Scenes/Nivel4.unity`, `Assets/NeuroPhobia_Level45/Scripts/Runtime/NPLevel4Controller.cs` | Probar 3 puntos, transición a Nivel5, HUD/PC/Quest |
 | Nivel5 cumple objetivo documental de fábrica/orbes | NO CUMPLE | Hay código y referencias activas a orbes, zona final 15 s y tres patrullas, pero el flujo no integra fin de sesión; lógica de tareas domésticas paralela | `Assets/Scenes/Nivel5.unity`, `Assets/NeuroPhobia_Level45/Documentation/INSTRUCCIONES_COMPLETAS.txt`, `NPLevel5Controller.cs` | Alinear flujo único y probar cuatro orbes, 3 arañas/rutas, mirada, botones, métricas/sesión |
-| OpenXR/Quest configurado | CUMPLE | Paquetes XR 3.3.1/4.5.4/1.16.1, Assets/XR, XRBootstrap y referencia XR Origin | `Packages/manifest.json`, `Assets/XR/`, `Assets/Scripts/Control/XRBootstrap.cs` | La cliente informa que base funciona en Quest, pero esta copia/revisión no se probó aquí: verificar arranque y los 5 niveles en dispositivo sin alterar configuración protegida |
+| OpenXR/Quest configurado | CUMPLE | Paquetes XR 3.3.1/4.5.4/1.16.1, Assets/XR, XRBootstrap y referencia XR Origin | `Packages/manifest.json`, `Assets/XR/`, `Assets/Scripts/Control/XRBootstrap.cs` | La información disponible indica que la base funciona en Quest, pero esta copia/revisión no se probó aquí: verificar arranque y los 5 niveles en dispositivo sin alterar configuración protegida |
 | UI/HUD niveles | PENDIENTE DE PRUEBA PC | HUD/controladores presentes en varias escenas; Nivel2 sin HUD propio visible en YAML; Nivel4 HUD inactivo serializado; Nivel5 HUDs duplicados por flujos | `Assets/Scenes/Nivel1.unity`…`Nivel5.unity`, `Assets/Scripts/*HUD.cs` | Comprobar visibilidad, mensajes, eventos y legibilidad en cada nivel |
 | Métricas | CUMPLE | Esquema/collector y campos de captura existen; varios flujos llaman BuildMetrics | `Assets/Scripts/Metricas/MetricsCollector.cs`, `SessionReport.cs`, controladores de niveles | Verificar captura real/valores en los cinco niveles; Nivel2 no tiene conexión serializada clara |
 | JSON local | CUMPLE | `JsonUtility.ToJson`, `File.WriteAllText` con `session_<id>.json` | `Assets/Scripts/Control/SessionManager.cs` | Completar sesión y validar fichero generado/valores/no nulos |
@@ -32,6 +32,5 @@ Estados limitados a: CUMPLE, NO CUMPLE, PENDIENTE DE PRUEBA PC, PENDIENTE DE PRU
 - PENDIENTE DE PRUEBA QUEST: 2.
 
 Estos conteos clasifican evidencia estática y no sustituyen ejecución.
-
 
 

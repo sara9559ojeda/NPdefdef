@@ -75,10 +75,6 @@ public class SessionManager : MonoBehaviour
         return report;
     }
 
-    /// <summary>
-    /// Punto de configuración para la futura tabla grado -> nivel aprobada por la cliente.
-    /// Por ahora todo grado válido conserva el inicio de la progresión existente: Nivel1.
-    /// </summary>
     public int ResolveInitialLevel(int phobiaGrade)
     {
         if (phobiaGrade < 1 || phobiaGrade > 5) throw new ArgumentOutOfRangeException(nameof(phobiaGrade));
