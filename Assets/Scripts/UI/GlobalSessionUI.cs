@@ -105,7 +105,7 @@ public sealed class GlobalSessionUI : MonoBehaviour
             if (recorded != null) return recorded;
         }
         MetricsCollector collector = FindFirstObjectByType<MetricsCollector>();
-        LevelMetrics metrics = collector != null ? collector.BuildMetrics(passed) : new LevelMetrics { level = level, levelPassed = passed, sessionDuration = Time.realtimeSinceStartup - sceneStart };
+        LevelMetrics metrics = collector != null ? collector.BuildMetrics(passed) : new LevelMetrics { level = level, levelPassed = passed, proximityMin = -1f, sessionDuration = Time.realtimeSinceStartup - sceneStart };
         metrics.level = level;
         metrics.levelPassed = passed;
         if (SessionManager.Instance != null) SessionManager.Instance.AddLevelMetrics(metrics);
