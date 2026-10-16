@@ -91,8 +91,8 @@ public sealed class GlobalSessionUI : MonoBehaviour
         GameStateManager.SetState(GameState.LEVEL_COMPLETE);
         Time.timeScale = 0f;
         resultText.text = "Nivel completado\nHas finalizado esta etapa de exposición.\n" + MetricsText(metrics);
-        nextButton.interactable = level == 3 || level == 4;
-        if (level == 1) resultText.text += "\nNivel 2 pendiente: escenario nuevo no disponible.";
+        nextButton.interactable = NextLevelOf(level) > 0;
+        if (level == 1) resultText.text += "\nNivel 2 pendiente: se continúa en Nivel 3.";
         resultPanel.SetActive(true);
     }
 
@@ -246,11 +246,23 @@ public sealed class GlobalSessionUI : MonoBehaviour
         GameStateManager.SetState(GameState.PLAYING);
     }
 
+    // Progresión acordada: 1 -> 3 -> 4 -> 5 (Nivel2 bloqueado hasta tener escenario). Nivel5 cierra la sesión.
+    private static int NextLevelOf(int completedLevel)
+    {
+        switch (completedLevel)
+        {
+            case 1: return 3;
+            case 3: return 4;
+            case 4: return 5;
+            default: return 0;
+        }
+    }
+
     private void NextLevel()
     {
-        if (level != 3 && level != 4) return;
+        int next = NextLevelOf(level);
+        if (next <= 0) return;
         Time.timeScale = 1f;
-        int next = level + 1;
         if (LevelManager.Instance != null) LevelManager.Instance.LoadLevel(next);
         else SceneManager.LoadScene("Nivel" + next);
     }

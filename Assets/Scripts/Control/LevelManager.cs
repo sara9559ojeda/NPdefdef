@@ -29,7 +29,7 @@ public class LevelManager : MonoBehaviour
     {
         int current = SessionManager.Instance != null ? SessionManager.Instance.CurrentLevel : ExtractCurrentLevel();
         int next = Mathf.Clamp(current + 1, 1, 5);
-        if (next == 2) { Debug.LogWarning("NeuroPhobia: nivel pendiente de escenario; avance deshabilitado."); return; }
+        if (next == 2) next = 3; // Progresión 1 -> 3 -> 4 -> 5: Nivel2 sigue pendiente de escenario.
         LoadLevel(next);
     }
 
