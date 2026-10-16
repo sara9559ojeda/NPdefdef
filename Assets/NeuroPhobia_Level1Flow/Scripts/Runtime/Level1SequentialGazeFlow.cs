@@ -5,6 +5,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using UnityEngine.XR;
 
 /// <summary>
 /// Controla la secuencia de cuatro ilustraciones del Nivel 1.
@@ -31,6 +32,11 @@ public sealed class Level1SequentialGazeFlow : MonoBehaviour
     [SerializeField] private string nextSceneName = "Nivel2";
     [SerializeField] private bool pauseGameplayDuringCompletion = true;
 
+    [Header("HUD en gafas")]
+    [Tooltip("Distancia (m) del HUD a la cámara cuando hay visor XR activo. Igual que Nivel4.")]
+    [SerializeField, Min(0.1f)] private float xrHudPlaneDistance = 0.72f;
+
+    private Canvas hudCanvas;
     private int currentCardIndex;
     private float gazeTimer;
     private float lastValidLookTime = float.NegativeInfinity;
@@ -47,6 +53,11 @@ public sealed class Level1SequentialGazeFlow : MonoBehaviour
     {
         FindPlayerCamera();
         PrepareCards();
+
+        if (progressText != null && progressText.canvas != null)
+        {
+            hudCanvas = progressText.canvas.rootCanvas;
+        }
 
         if (completionPanel != null)
         {
@@ -95,6 +106,49 @@ public sealed class Level1SequentialGazeFlow : MonoBehaviour
         }
 
         UpdateProgressUI(isLooking);
+    }
+
+    private void LateUpdate()
+    {
+        AdaptHudCanvasToXR();
+    }
+
+    /// <summary>
+    /// Un Canvas ScreenSpaceOverlay se ve en la vista Game pero no en el visor XR.
+    /// Con visor activo se pasa a ScreenSpaceCamera sobre la cámara del jugador (mismo criterio que Nivel4);
+    /// se revisa cada frame porque XRBootstrap inicia XR de forma asíncrona.
+    /// </summary>
+    private void AdaptHudCanvasToXR()
+    {
+        if (hudCanvas == null)
+        {
+            return;
+        }
+
+        if (XRSettings.isDeviceActive)
+        {
+            if (playerCamera == null || !playerCamera.isActiveAndEnabled)
+            {
+                FindPlayerCamera();
+            }
+
+            if (playerCamera == null)
+            {
+                return;
+            }
+
+            if (hudCanvas.renderMode != RenderMode.ScreenSpaceCamera || hudCanvas.worldCamera != playerCamera)
+            {
+                hudCanvas.renderMode = RenderMode.ScreenSpaceCamera;
+                hudCanvas.worldCamera = playerCamera;
+                hudCanvas.planeDistance = xrHudPlaneDistance;
+            }
+        }
+        else if (hudCanvas.renderMode == RenderMode.ScreenSpaceCamera)
+        {
+            hudCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            hudCanvas.worldCamera = null;
+        }
     }
 
     private void PrepareCards()

@@ -55,6 +55,7 @@ Fecha: 2026-10-16. Se corrigieron partes declaradas como CUMPLE que no entregaba
 - **Nivel5:** `LevelManagers` activo (poller y LevelBootstrap) sin collector duplicado; `NPLevel5Controller` deshabilitado.
 - **Métricas:** `headMovementFrequency` es el promedio del nivel; `avoidanceAttempts` cuenta episodios de retroceso ≥ 0,8 m/s; `BreathingGuide` ya no suma `breathingActivations` en Start; el respaldo de `GlobalSessionUI` usa `proximityMin = -1`.
 - **Red:** la URL del backend se anula con `backend_url.txt` en `persistentDataPath` o PlayerPrefs `NeuroPhobia.BackendUrl`; `insecureHttpOption` pasó de 0 a 2 (HTTP siempre permitido) con aprobación de la usuaria. Es el único cambio en ProjectSettings; XR y Packages no se tocaron.
+- **HUD de Nivel1 en Quest:** el canvas de progreso era `ScreenSpaceOverlay`, que se ve en la vista Game pero no en el visor. `Level1SequentialGazeFlow` lo pasa a `ScreenSpaceCamera` (0,72 m, cámara del XR Origin) mientras haya visor XR activo.
 - **Comandos:** `pause` solo actúa en PLAYING (se ignora en LEVEL_COMPLETE y SESSION_END) y `resume` solo desde BREATHING; un cuerpo vacío o JSON inválido se trata como `none`.
 
 Verificación: Assembly-CSharp compila sin errores con el Roslyn de Unity 6000.3.7f1. Batchmode no se pudo usar porque el Editor tenía el proyecto abierto. **PENDIENTE PC/QUEST:** Play Mode, recorrido 1 → 3 → 4 → 5 y envío real a un FastAPI en la LAN.
