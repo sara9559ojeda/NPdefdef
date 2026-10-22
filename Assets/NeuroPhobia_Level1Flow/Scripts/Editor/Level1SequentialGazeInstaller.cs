@@ -202,10 +202,10 @@ public static class Level1SequentialGazeInstaller
             canvasTransform);
 
         RectTransform panelRect = panel.GetComponent<RectTransform>();
-        panelRect.anchorMin = new Vector2(0.5f, 1f);
-        panelRect.anchorMax = new Vector2(0.5f, 1f);
-        panelRect.pivot = new Vector2(0.5f, 1f);
-        panelRect.anchoredPosition = new Vector2(0f, -35f);
+        panelRect.anchorMin = Vector2.zero;
+        panelRect.anchorMax = Vector2.zero;
+        panelRect.pivot = Vector2.zero;
+        panelRect.anchoredPosition = new Vector2(30f, 30f);
         panelRect.sizeDelta = new Vector2(620f, 150f);
 
         Image panelImage = panel.AddComponent<Image>();

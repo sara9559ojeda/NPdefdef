@@ -52,6 +52,10 @@ public sealed class Level1SpawnAlign : MonoBehaviour
             yield break;
         }
 
+        // El prefab deja el modo de seguimiento sin especificar; en Quest eso puede dejar el origen a la
+        // altura de la cabeza y las gafas quedan a ras (o bajo) el piso, como si se cayera al vacío.
+        origin.RequestedTrackingOriginMode = XROrigin.TrackingOriginMode.Floor;
+
         // Esperar a que el casco entregue una pose válida (cámara fuera del origen).
         while (waited < MaxWaitSeconds &&
                (origin.Camera == null ||

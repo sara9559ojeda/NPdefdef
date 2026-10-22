@@ -35,8 +35,12 @@ public sealed class Level1SequentialGazeFlow : MonoBehaviour
     [Header("HUD en gafas")]
     [Tooltip("Distancia (m) del HUD a la cámara cuando hay visor XR activo. Igual que Nivel4.")]
     [SerializeField, Min(0.1f)] private float xrHudPlaneDistance = 0.72f;
+    [Tooltip("Escala del panel de progreso anclado en la esquina inferior izquierda.")]
+    [SerializeField, Min(0.1f)] private float hudCornerScale = 0.7f;
 
     private Canvas hudCanvas;
+    private RectTransform hudPanel;
+    private Vector2 hudPanelBasePosition;
     private int currentCardIndex;
     private float gazeTimer;
     private float lastValidLookTime = float.NegativeInfinity;
@@ -57,6 +61,22 @@ public sealed class Level1SequentialGazeFlow : MonoBehaviour
         if (progressText != null && progressText.canvas != null)
         {
             hudCanvas = progressText.canvas.rootCanvas;
+            hudPanel = progressText.transform as RectTransform;
+            while (hudPanel != null && hudPanel.parent != hudCanvas.transform)
+            {
+                hudPanel = hudPanel.parent as RectTransform;
+            }
+
+            if (hudPanel != null)
+            {
+                // Esquina inferior izquierda para no tapar las imágenes de las arañas.
+                hudPanel.anchorMin = Vector2.zero;
+                hudPanel.anchorMax = Vector2.zero;
+                hudPanel.pivot = Vector2.zero;
+                hudPanel.anchoredPosition = new Vector2(30f, 30f);
+                hudPanel.localScale = Vector3.one * hudCornerScale;
+                hudPanelBasePosition = hudPanel.anchoredPosition;
+            }
         }
 
         if (completionPanel != null)
@@ -143,6 +163,7 @@ public sealed class Level1SequentialGazeFlow : MonoBehaviour
                 hudCanvas.worldCamera = playerCamera;
                 hudCanvas.planeDistance = xrHudPlaneDistance;
             }
+
         }
         else if (hudCanvas.renderMode == RenderMode.ScreenSpaceCamera)
         {
