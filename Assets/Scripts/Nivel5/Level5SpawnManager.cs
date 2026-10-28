@@ -6,6 +6,8 @@ public class Level5SpawnManager : MonoBehaviour
     public Transform[] spawnPoints = new Transform[5];
     public MetricsCollector metricsCollector;
     [Range(.05f, 1f)] public float spiderScale = .3f;
+    [Tooltip("El modelo CaveSpider viene tumbado; Nivel4 lo pone de pie con -90 en X.")]
+    public Vector3 uprightEuler = new Vector3(-90f, 0f, 0f);
     private readonly AranaController[] spiders = new AranaController[5];
 
     private void Start()
@@ -20,7 +22,7 @@ public class Level5SpawnManager : MonoBehaviour
         for (int i = 0; i < grade && i < spawnPoints.Length && i < spiders.Length; i++)
         {
             if (spawnPoints[i] == null) continue;
-            GameObject spider = Instantiate(spiderPrefab, spawnPoints[i].position, spawnPoints[i].rotation, transform);
+            GameObject spider = Instantiate(spiderPrefab, spawnPoints[i].position, spawnPoints[i].rotation * Quaternion.Euler(uprightEuler), transform);
             spider.name = "L5_CaveSpider_" + (i + 1).ToString("00");
             spider.transform.localScale *= spiderScale;
             if (spider.GetComponentInChildren<Collider>() == null)

@@ -2987,6 +2987,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Visual_WolfSpider
       objectReference: {fileID: 0}
+    - target: {fileID: 5090565943618139736, guid: 4f38b6359247d574aac2ea168eeced90, type: 3}
+      propertyPath: 'm_Materials.Array.data[0]'
+      value: 
+      objectReference: {fileID: 2100000, guid: 57f5965b3556b3e42aa463ecbfe5dbec, type: 2}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -12075,15 +12079,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1717954561962503726, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
       propertyPath: m_LocalScale.x
-      value: 1
+      value: 1.8
       objectReference: {fileID: 0}
     - target: {fileID: 1717954561962503726, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
       propertyPath: m_LocalScale.y
-      value: 1
+      value: 1.8
       objectReference: {fileID: 0}
     - target: {fileID: 1717954561962503726, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
       propertyPath: m_LocalScale.z
-      value: 1
+      value: 1.8
       objectReference: {fileID: 0}
     - target: {fileID: 1717954561962503726, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
       propertyPath: m_LocalPosition.x
@@ -23757,6 +23761,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Visual_WolfSpider
       objectReference: {fileID: 0}
+    - target: {fileID: 5090565943618139736, guid: 4f38b6359247d574aac2ea168eeced90, type: 3}
+      propertyPath: 'm_Materials.Array.data[0]'
+      value: 
+      objectReference: {fileID: 2100000, guid: 57f5965b3556b3e42aa463ecbfe5dbec, type: 2}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -28576,6 +28584,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Visual_WolfSpider
       objectReference: {fileID: 0}
+    - target: {fileID: 5090565943618139736, guid: 4f38b6359247d574aac2ea168eeced90, type: 3}
+      propertyPath: 'm_Materials.Array.data[0]'
+      value: 
+      objectReference: {fileID: 2100000, guid: 57f5965b3556b3e42aa463ecbfe5dbec, type: 2}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []

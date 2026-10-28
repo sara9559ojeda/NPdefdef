@@ -429,11 +429,12 @@ public sealed class NeuroPhobiaLevel2StableGaze : MonoBehaviour
         RectTransform panelRect =
             panel.GetComponent<RectTransform>();
 
-        panelRect.anchorMin = new Vector2(0.5f, 1f);
-        panelRect.anchorMax = new Vector2(0.5f, 1f);
-        panelRect.pivot = new Vector2(0.5f, 1f);
+        // Esquina inferior izquierda para no tapar la araña.
+        panelRect.anchorMin = Vector2.zero;
+        panelRect.anchorMax = Vector2.zero;
+        panelRect.pivot = Vector2.zero;
         panelRect.sizeDelta = new Vector2(560f, 150f);
-        panelRect.anchoredPosition = new Vector2(0f, -18f);
+        panelRect.anchoredPosition = new Vector2(40f, 40f);
 
         Image panelImage = panel.AddComponent<Image>();
         panelImage.color = new Color(0.025f, 0.035f, 0.045f, 0.90f);
@@ -597,7 +598,7 @@ public sealed class NeuroPhobiaLevel2StableGaze : MonoBehaviour
         instructionText.text =
             looking
                 ? "Bien. Mantén la mirada en la araña."
-                : "Mira directamente a la araña.";
+                : "Mira la araña · Stick: moverte · A: sentarte";
 
         if (progressFill != null)
         {
@@ -729,17 +730,17 @@ public sealed class NeuroPhobiaLevel2StableGaze : MonoBehaviour
     private void AttachHudToCamera(Camera camera)
     {
         if (camera == null) return;
-        Attach(hudCanvas, camera);
-        Attach(completionCanvas, camera);
+        Attach(hudCanvas, camera, 1.1f, 0.0012f);
+        Attach(completionCanvas, camera, 1.5f, 0.0015f);
     }
 
-    private static void Attach(Canvas canvas, Camera camera)
+    private static void Attach(Canvas canvas, Camera camera, float distance, float scale)
     {
         if (canvas == null || canvas.transform.parent == camera.transform) return;
         canvas.transform.SetParent(camera.transform, false);
-        canvas.transform.localPosition = new Vector3(0f, 0f, 1.5f);
+        canvas.transform.localPosition = new Vector3(0f, 0f, distance);
         canvas.transform.localRotation = Quaternion.identity;
-        canvas.transform.localScale = Vector3.one * 0.0015f;
+        canvas.transform.localScale = Vector3.one * scale;
         canvas.worldCamera = camera;
     }
 
