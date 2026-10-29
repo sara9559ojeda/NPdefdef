@@ -49,7 +49,39 @@ namespace NeuroPhobia.Level45
             safePosition = transform.position;
             stableGroundY = transform.position.y;
             SnapToGround();
+            LiftVisualToGround();
             safePosition = transform.position;
+        }
+
+        // El pivote del modelo no siempre está en las patas: se sube (o baja) el visual
+        // hasta que su punto más bajo toque el suelo y no quede enterrado.
+        private void LiftVisualToGround()
+        {
+            if (visualRoot == null)
+            {
+                return;
+            }
+
+            Renderer[] renderers = GetComponentsInChildren<Renderer>();
+            if (renderers.Length == 0)
+            {
+                return;
+            }
+
+            Bounds bounds = renderers[0].bounds;
+            foreach (Renderer rendererComponent in renderers)
+            {
+                bounds.Encapsulate(rendererComponent.bounds);
+            }
+
+            float delta = (transform.position.y - groundOffset) - bounds.min.y;
+            if (Mathf.Abs(delta) < 0.005f)
+            {
+                return;
+            }
+
+            visualRoot.position += Vector3.up * delta;
+            visualBasePosition = visualRoot.localPosition;
         }
 
         private void Update()

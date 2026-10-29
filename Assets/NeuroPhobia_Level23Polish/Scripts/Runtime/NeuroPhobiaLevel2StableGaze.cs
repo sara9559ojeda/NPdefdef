@@ -16,7 +16,7 @@ using UnityEngine.UI;
 public sealed class NeuroPhobiaLevel2StableGaze : MonoBehaviour
 {
     [Header("Exposición")]
-    public float requiredSeconds = 30f;
+    public float requiredSeconds = 20f;
     [Range(3f, 25f)]
     public float acceptedGazeAngle = 12f;
     public float gazeGraceSeconds = 0.35f;

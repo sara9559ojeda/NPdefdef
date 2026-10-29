@@ -184,6 +184,8 @@ public sealed class GlobalSessionUI : MonoBehaviour
         if (camera != null) canvas.worldCamera = camera;
 
         pauseButton = Button("Pausa", transform, "PAUSA", new Vector2(415,270), new Vector2(150,58), ShowPause);
+        // La pausa se abre solo con el botón del mando.
+        pauseButton.gameObject.SetActive(false);
 
         pausePanel = Panel("CanvasPause", "PAUSA", "Puedes continuar o finalizar la exposición.");
         Button("Continuar", pausePanel.transform, "Continuar", new Vector2(0,75), new Vector2(420,62), Resume);
