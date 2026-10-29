@@ -13,6 +13,7 @@ using UnityEngine.XR;
 public sealed class Level2SpawnAlign : MonoBehaviour
 {
     private const string SpiderName = "NP_WolfSpider_Nivel2_Static";
+    private const string JarName = "NP_GlassJar_Nivel2";
     private const float SpiderDistance = 4.5f;
     private const float MaxWaitSeconds = 10f;
 
@@ -142,5 +143,54 @@ public sealed class Level2SpawnAlign : MonoBehaviour
         }
 
         spider.transform.SetPositionAndRotation(position, Quaternion.LookRotation(-direction, Vector3.up));
+        BuildGlassJar(spider);
+    }
+
+    // Jarrón de cristal alrededor de la araña. No cuelga de la araña ni lleva "spider" en el nombre
+    // para que NeuroPhobiaLevel2StableGaze no lo confunda con la araña al buscarla por nombre.
+    private static void BuildGlassJar(GameObject spider)
+    {
+        if (GameObject.Find(JarName) != null) return;
+
+        Material glass = Resources.Load<Material>("NP_GlassJar");
+        if (glass == null)
+        {
+            Debug.LogWarning("NeuroPhobia: falta Resources/NP_GlassJar; la araña queda sin jarrón.");
+            return;
+        }
+
+        Bounds bounds = default;
+        bool hasBounds = false;
+        foreach (Renderer renderer in spider.GetComponentsInChildren<Renderer>())
+        {
+            if (!hasBounds) { bounds = renderer.bounds; hasBounds = true; }
+            else bounds.Encapsulate(renderer.bounds);
+        }
+
+        if (!hasBounds) return;
+
+        float radius = Mathf.Max(bounds.extents.x, bounds.extents.z) * 1.35f + 0.05f;
+        float height = bounds.size.y * 1.3f + 0.1f;
+        Vector3 basePoint = new Vector3(bounds.center.x, bounds.min.y, bounds.center.z);
+
+        GameObject jar = new GameObject(JarName);
+        jar.transform.position = basePoint;
+
+        // Cilindro primitivo mide 2 de alto y 1 de diámetro: se escala a la medida del jarrón.
+        GameObject body = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        body.name = "Cuerpo";
+        body.transform.SetParent(jar.transform, false);
+        body.transform.localPosition = Vector3.up * (height * 0.5f);
+        body.transform.localScale = new Vector3(radius * 2f, height * 0.5f, radius * 2f);
+        body.GetComponent<Renderer>().sharedMaterial = glass;
+        Destroy(body.GetComponent<Collider>());
+
+        GameObject lid = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        lid.name = "Tapa";
+        lid.transform.SetParent(jar.transform, false);
+        lid.transform.localPosition = Vector3.up * (height + 0.02f);
+        lid.transform.localScale = new Vector3(radius * 2.1f, 0.02f, radius * 2.1f);
+        lid.GetComponent<Renderer>().sharedMaterial = glass;
+        Destroy(lid.GetComponent<Collider>());
     }
 }
