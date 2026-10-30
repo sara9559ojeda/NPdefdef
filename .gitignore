@@ -1,76 +1,112 @@
-# Carpetas generadas por Unity
-[Ll]ibrary/
-[Tt]emp/
-[Oo]bj/
-[Ll]ogs/
-[Uu]ser[Ss]ettings/
-[Mm]emoryCaptures/
-[Rr]ecordings/
-[Bb]uild/
-[Bb]uilds/
-[Aa]_BackUpThisFolder_ButDontShipItWithYourGame/
-*_BackUpThisFolder_ButDontShipItWithYourGame/
-NeuroPhobia_BurstDebugInformation_DoNotShip/
+# ═══════════════════════════════════════════════════════════════
+#  NEUROPHOBIA — app de realidad virtual (Unity)
+#  Este repositorio solo contiene el proyecto Unity y su documentación.
+#  El backend y la web viven en sus propios repositorios (NP_Back, NP_Front).
+# ═══════════════════════════════════════════════════════════════
 
-# Builds exportados (apk/exe/etc.)
+# ── Carpetas que genera Unity ──
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
+/[Aa]ssets/[Ss]treaming[Aa]ssets/aa/
+/[Aa]ssets/AssetStoreTools*
+
+# ── Residuos de compilación y de builds ──
+*_BackUpThisFolder_ButDontShipItWithYourGame/
+*_BurstDebugInformation_DoNotShip/
 *.apk
 *.aab
+*.obb
 *.exe
 *.app
+*.unitypackage
+*.symbols.zip
+crashlytics-build.properties
+sysinfo.txt
+.gradle/
+ExportedObj/
 
-# Visual Studio y VS Code
+# ── Proyectos que generan los IDE ──
 .vs/
 .vscode/
+.idea/
+.consulo/
 *.csproj
+*.unityproj
 *.sln
 *.slnx
+*.suo
 *.user
 *.userprefs
 *.pidb
+*.pidb.meta
+*.pdb
+*.pdb.meta
+*.mdb
+*.mdb.meta
 *.booproj
 *.svd
-
-# Archivos temporales locales
-.utmp/
 *.tmp
-*.log
+.utmp/
+/[Aa]ssets/Plugins/Editor/JetBrains*
 
-# Sistema operativo
-.DS_Store
-Thumbs.db
-# Respaldos y recuperacion local (no forman parte del juego publicado)
+# ── Logs y cachés ──
+*.log
+*.cache
+
+# ── Respaldos y recuperación local (no forman parte del juego) ──
 [Bb]ackups/
 [Bb]ackups.meta
-/Assets/_Recovery/
-/Assets/_Recovery.meta
-/Assets/Scenes/*_BACKUP_*.unity
-/Assets/Scenes/*_BACKUP_*.unity.meta
+/[Ll]ibrary_respaldo*/
+/[Aa]ssets/_Recovery/
+/[Aa]ssets/_Recovery.meta
+/[Aa]ssets/[Ss]cenes/*_BACKUP_*.unity
+/[Aa]ssets/[Ss]cenes/*_BACKUP_*.unity.meta
 *.disabled
 *.disabled.meta
 *.bak
-*.cache
+*.orig
 
-# Paquetes de instalacion y metadatos de carpetas ya trasladadas
-/Assets/NeuroPhobia_Nivel2_PARQUE_GRANDE_FINAL.zip
-/Assets/NeuroPhobia_Nivel2_PARQUE_GRANDE_FINAL.zip.meta
-/Assets/NeuroPhobia_Nivel2_PARQUE_GRANDE_FINAL.meta
-/Assets/NeuroPhobia_Nivel3_SOTANO_ENORME_FINAL.zip
-/Assets/NeuroPhobia_Nivel3_SOTANO_ENORME_FINAL.zip.meta
-/Assets/NeuroPhobia_Nivel3_SOTANO_ENORME_FINAL.meta
+# ── Proyecto Unity suelto creado por error ──
+/My project/
 
-# Utilidades locales de reparacion y copias de codigo
-/APLICAR_FIX_NIVEL4.bat
-/APLICAR_FIX_NIVEL4.ps1
-/LIMPIAR_ASSETS_DUPLICADOS.bat
-/LIMPIAR_ASSETS_DUPLICADOS.ps1
-/REPARAR_DUPLICADOS_LEVEL45.bat
-/REPARAR_DUPLICADOS_LEVEL45.ps1
-/REPARAR_ORBES45_SIN_DUPLICAR.bat
-/REPARAR_ORBES45_SIN_DUPLICAR.ps1
+# ── Lo que pertenece a otros repositorios o a la coordinación local ──
+/backend/
+/frontend/
+/coordination/
+/delivery/
+/NP_Back/
+/NP_Front/
+/NP_Coordinacion/
+
+# ── Secretos y configuración local ──
+.env
+.env.*
+*.keystore
+*.jks
+backend_url.txt
+
+# ── Paquetes de instalación y utilidades de reparación antiguas ──
+/[Aa]ssets/NeuroPhobia_Nivel2_PARQUE_GRANDE_FINAL.zip*
+/[Aa]ssets/NeuroPhobia_Nivel2_PARQUE_GRANDE_FINAL.meta
+/[Aa]ssets/NeuroPhobia_Nivel3_SOTANO_ENORME_FINAL.zip*
+/[Aa]ssets/NeuroPhobia_Nivel3_SOTANO_ENORME_FINAL.meta
+/APLICAR_FIX_*.bat
+/APLICAR_FIX_*.ps1
+/LIMPIAR_ASSETS_DUPLICADOS.*
+/REPARAR_*.bat
+/REPARAR_*.ps1
 /NPLevel4Controller_NUEVO.txt
-/Assets/NPLevel4Controller_NUEVO.txt
-/Assets/NPLevel4Controller_NUEVO.txt.meta
-/Assets/APLICAR_FIX_NIVEL4_MULTIPLES_ARANAS.bat
-/Assets/APLICAR_FIX_NIVEL4_MULTIPLES_ARANAS.bat.meta
-/Assets/APLICAR_FIX_NIVEL4_MULTIPLES_ARANAS.ps1
-/Assets/APLICAR_FIX_NIVEL4_MULTIPLES_ARANAS.ps1.meta
+/[Aa]ssets/NPLevel4Controller_NUEVO.txt*
+/[Aa]ssets/APLICAR_FIX_*
+
+# ── Sistema operativo ──
+.DS_Store
+Thumbs.db
+desktop.ini
