@@ -69,7 +69,6 @@ public static class NeuroPhobiaLevel2StableGazeInstaller
         gaze.requiredSeconds = 30f;
         gaze.acceptedGazeAngle = 12f;
         gaze.gazeGraceSeconds = 0.35f;
-        gaze.nextScene = "Nivel3";
         gaze.enabled = true;
 
         EditorUtility.SetDirty(root);

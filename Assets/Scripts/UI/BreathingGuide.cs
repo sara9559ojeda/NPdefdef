@@ -10,9 +10,8 @@ public class BreathingGuide : MonoBehaviour
 
     private void Start()
     {
+        // Solo anima la esfera; no registra breathingActivations (antes sumaba una por instancia en Start).
         baseScale = Vector3.one;
-        MetricsCollector metrics = FindFirstObjectByType<MetricsCollector>();
-        if (metrics != null) metrics.RegisterBreathingActivation();
     }
 
     private void Update()

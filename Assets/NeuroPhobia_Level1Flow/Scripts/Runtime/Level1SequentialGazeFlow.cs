@@ -5,6 +5,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using UnityEngine.XR;
 
 /// <summary>
 /// Controla la secuencia de cuatro ilustraciones del Nivel 1.
@@ -31,6 +32,17 @@ public sealed class Level1SequentialGazeFlow : MonoBehaviour
     [SerializeField] private string nextSceneName = "Nivel2";
     [SerializeField] private bool pauseGameplayDuringCompletion = true;
 
+    [Header("HUD en gafas")]
+    [Tooltip("Distancia (m) del HUD a la cámara cuando hay visor XR activo. Igual que Nivel4.")]
+    [SerializeField, Min(0.1f)] private float xrHudPlaneDistance = 0.72f;
+    [Tooltip("Escala del panel de progreso.")]
+    [SerializeField, Min(0.1f)] private float hudCornerScale = 0.7f;
+    [Tooltip("Posición del centro del panel como fracción del ancho y alto de la pantalla.")]
+    [SerializeField] private Vector2 hudAnchor = new Vector2(0.5f, 0.2f);
+
+    private Canvas hudCanvas;
+    private RectTransform hudPanel;
+    private Vector2 hudPanelBasePosition;
     private int currentCardIndex;
     private float gazeTimer;
     private float lastValidLookTime = float.NegativeInfinity;
@@ -47,6 +59,33 @@ public sealed class Level1SequentialGazeFlow : MonoBehaviour
     {
         FindPlayerCamera();
         PrepareCards();
+
+        if (progressText != null && progressText.canvas != null)
+        {
+            hudCanvas = progressText.canvas.rootCanvas;
+            hudPanel = progressText.transform as RectTransform;
+            while (hudPanel != null && hudPanel.parent != hudCanvas.transform)
+            {
+                hudPanel = hudPanel.parent as RectTransform;
+            }
+
+            if (hudPanel != null)
+            {
+                // Centrado horizontalmente, en la parte baja para no tapar las imágenes de las arañas.
+                hudPanel.anchorMin = hudAnchor;
+                hudPanel.anchorMax = hudAnchor;
+                hudPanel.pivot = new Vector2(0.5f, 0.5f);
+                hudPanel.anchoredPosition = Vector2.zero;
+                hudPanel.localScale = Vector3.one * hudCornerScale;
+                hudPanelBasePosition = hudPanel.anchoredPosition;
+
+                // El HUD es solo informativo: no debe bloquear los botones del menú.
+                foreach (Graphic graphic in hudCanvas.GetComponentsInChildren<Graphic>(true))
+                {
+                    graphic.raycastTarget = false;
+                }
+            }
+        }
 
         if (completionPanel != null)
         {
@@ -95,6 +134,62 @@ public sealed class Level1SequentialGazeFlow : MonoBehaviour
         }
 
         UpdateProgressUI(isLooking);
+    }
+
+    private void LateUpdate()
+    {
+        AdaptHudCanvasToXR();
+    }
+
+    /// <summary>
+    /// Un Canvas ScreenSpaceOverlay se ve en la vista Game pero no en el visor XR.
+    /// Con visor activo se pasa a ScreenSpaceCamera sobre la cámara del jugador (mismo criterio que Nivel4);
+    /// se revisa cada frame porque XRBootstrap inicia XR de forma asíncrona.
+    /// </summary>
+    private void AdaptHudCanvasToXR()
+    {
+        if (hudCanvas == null)
+        {
+            return;
+        }
+
+        if (XRSettings.isDeviceActive)
+        {
+            if (playerCamera == null || !playerCamera.isActiveAndEnabled)
+            {
+                FindPlayerCamera();
+            }
+
+            if (playerCamera == null)
+            {
+                return;
+            }
+
+            if (hudCanvas.renderMode != RenderMode.ScreenSpaceCamera || hudCanvas.worldCamera != playerCamera)
+            {
+                hudCanvas.renderMode = RenderMode.ScreenSpaceCamera;
+                hudCanvas.worldCamera = playerCamera;
+                hudCanvas.planeDistance = xrHudPlaneDistance;
+            }
+
+            SetHudAnchor(true);
+
+        }
+        else if (hudCanvas.renderMode == RenderMode.ScreenSpaceCamera)
+        {
+            hudCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            hudCanvas.worldCamera = null;
+            SetHudAnchor(false);
+        }
+    }
+
+    private void SetHudAnchor(bool xr)
+    {
+        if (hudPanel == null) return;
+
+        hudPanel.anchorMin = hudAnchor;
+        hudPanel.anchorMax = hudAnchor;
+        hudPanel.anchoredPosition = hudPanelBasePosition;
     }
 
     private void PrepareCards()
@@ -155,6 +250,12 @@ public sealed class Level1SequentialGazeFlow : MonoBehaviour
             {
                 card.SetActive(false);
             }
+        }
+
+        // El HUD de progreso ya no aplica: se oculta para que no tape el menú de fin de nivel.
+        if (hudCanvas != null)
+        {
+            hudCanvas.gameObject.SetActive(false);
         }
 
         GlobalSessionUI.CompleteLevel(1);

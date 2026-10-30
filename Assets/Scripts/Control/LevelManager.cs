@@ -20,7 +20,6 @@ public class LevelManager : MonoBehaviour
     public void LoadLevel(int level)
     {
         level = Mathf.Clamp(level, 1, 5);
-        if (level == 2) { Debug.LogWarning("NeuroPhobia: escenario pendiente; nivel no cargado."); return; }
         if (SessionManager.Instance != null) SessionManager.Instance.CurrentLevel = level;
         SceneManager.LoadScene($"Nivel{level}");
     }
@@ -29,7 +28,6 @@ public class LevelManager : MonoBehaviour
     {
         int current = SessionManager.Instance != null ? SessionManager.Instance.CurrentLevel : ExtractCurrentLevel();
         int next = Mathf.Clamp(current + 1, 1, 5);
-        if (next == 2) { Debug.LogWarning("NeuroPhobia: nivel pendiente de escenario; avance deshabilitado."); return; }
         LoadLevel(next);
     }
 

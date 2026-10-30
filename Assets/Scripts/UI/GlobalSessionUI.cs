@@ -5,9 +5,7 @@ using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using UnityEngine.XR.Interaction.Toolkit.UI;
-#if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
-#endif
 
 /// <summary>Una sola interfaz de sesión por escena jugable; no modifica las escenas XR.</summary>
 public sealed class GlobalSessionUI : MonoBehaviour
@@ -22,6 +20,10 @@ public sealed class GlobalSessionUI : MonoBehaviour
     private TMP_Text resultText;
     private TMP_Text summaryText;
     private Button nextButton;
+    private Button pauseButton;
+    private InputAction pauseAction;
+    private InputAction nextAction;
+    private InputAction menuAction;
     private int level;
     private float sceneStart;
     private bool completed;
@@ -39,7 +41,7 @@ public sealed class GlobalSessionUI : MonoBehaviour
         if (current != null) Destroy(current.gameObject);
         current = null;
         if (!scene.name.StartsWith("Nivel") || !int.TryParse(scene.name.Substring(5), out int number) ||
-            (number != 1 && number != 3 && number != 4 && number != 5)) return;
+            number < 1 || number > 5) return;
         GameObject root = new GameObject("NP_GlobalSessionUI", typeof(RectTransform));
         current = root.AddComponent<GlobalSessionUI>();
         current.level = number;
@@ -53,6 +55,7 @@ public sealed class GlobalSessionUI : MonoBehaviour
         GameStateManager.SetState(GameState.PLAYING);
         EnsureEventSystem();
         BuildCanvas();
+        CreateInputActions();
     }
 
     private void Update()
@@ -64,18 +67,62 @@ public sealed class GlobalSessionUI : MonoBehaviour
 #if ENABLE_INPUT_SYSTEM
         escapePressed |= Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame;
 #endif
-        if (escapePressed)
+        if (escapePressed || (pauseAction != null && pauseAction.WasPressedThisFrame()))
         {
             if (confirmPanel.activeSelf) ShowPause();
             else if (pausePanel.activeSelf) Resume();
             else if (!completed) ShowPause();
+        }
+
+        // Respaldo con controles para el menú de nivel completado (A = siguiente, B = menú).
+        if (completed && resultPanel.activeSelf)
+        {
+            if (nextButton.interactable && nextAction.WasPressedThisFrame()) NextLevel();
+            else if (menuAction.WasPressedThisFrame()) FinishAndShowSummary();
         }
     }
 
     private void OnDestroy()
     {
         if (current == this) current = null;
+        pauseAction?.Dispose();
+        nextAction?.Dispose();
+        menuAction?.Dispose();
         Time.timeScale = 1f;
+    }
+
+    // Botón de menú del control derecho (y B / menú izquierdo) abre y cierra la pausa.
+    private void CreateInputActions()
+    {
+        pauseAction = new InputAction("NP_Session_Pause", InputActionType.Button);
+        pauseAction.AddBinding("<XRController>{RightHand}/menu");
+        pauseAction.AddBinding("<XRController>{RightHand}/secondaryButton");
+        pauseAction.AddBinding("<XRController>{LeftHand}/menu");
+        pauseAction.Enable();
+
+        nextAction = new InputAction("NP_Session_Next", InputActionType.Button);
+        nextAction.AddBinding("<XRController>{RightHand}/primaryButton");
+        nextAction.Enable();
+
+        menuAction = new InputAction("NP_Session_Menu", InputActionType.Button);
+        menuAction.AddBinding("<XRController>{RightHand}/secondaryButton");
+        menuAction.AddBinding("<XRController>{RightHand}/menu");
+        menuAction.AddBinding("<XRController>{LeftHand}/menu");
+        menuAction.Enable();
+    }
+
+    // Otros canvas del nivel (psicoeducación, HUD antiguo) pueden quedar delante y capturar el rayo.
+    private void DisableOtherRaycasters()
+    {
+        foreach (GraphicRaycaster raycaster in FindObjectsByType<GraphicRaycaster>(FindObjectsSortMode.None))
+        {
+            if (raycaster.gameObject != gameObject) raycaster.enabled = false;
+        }
+
+        foreach (TrackedDeviceGraphicRaycaster raycaster in FindObjectsByType<TrackedDeviceGraphicRaycaster>(FindObjectsSortMode.None))
+        {
+            if (raycaster.gameObject != gameObject) raycaster.enabled = false;
+        }
     }
 
     public static void CompleteLevel(int completedLevel)
@@ -91,8 +138,9 @@ public sealed class GlobalSessionUI : MonoBehaviour
         GameStateManager.SetState(GameState.LEVEL_COMPLETE);
         Time.timeScale = 0f;
         resultText.text = "Nivel completado\nHas finalizado esta etapa de exposición.\n" + MetricsText(metrics);
-        nextButton.interactable = level == 3 || level == 4;
-        if (level == 1) resultText.text += "\nNivel 2 pendiente: escenario nuevo no disponible.";
+        nextButton.interactable = NextLevelOf(level) > 0;
+        pauseButton.gameObject.SetActive(false);
+        DisableOtherRaycasters();
         resultPanel.SetActive(true);
     }
 
@@ -105,7 +153,7 @@ public sealed class GlobalSessionUI : MonoBehaviour
             if (recorded != null) return recorded;
         }
         MetricsCollector collector = FindFirstObjectByType<MetricsCollector>();
-        LevelMetrics metrics = collector != null ? collector.BuildMetrics(passed) : new LevelMetrics { level = level, levelPassed = passed, sessionDuration = Time.realtimeSinceStartup - sceneStart };
+        LevelMetrics metrics = collector != null ? collector.BuildMetrics(passed) : new LevelMetrics { level = level, levelPassed = passed, proximityMin = -1f, sessionDuration = Time.realtimeSinceStartup - sceneStart };
         metrics.level = level;
         metrics.levelPassed = passed;
         if (SessionManager.Instance != null) SessionManager.Instance.AddLevelMetrics(metrics);
@@ -131,8 +179,13 @@ public sealed class GlobalSessionUI : MonoBehaviour
         if (root == null) root = gameObject.AddComponent<RectTransform>();
         root.sizeDelta = new Vector2(1000f, 650f);
         gameObject.AddComponent<TrackedDeviceGraphicRaycaster>();
+        // Sin GraphicRaycaster estándar los botones no responden al mouse/pantalla.
+        gameObject.AddComponent<GraphicRaycaster>();
+        if (camera != null) canvas.worldCamera = camera;
 
-        Button("Pausa", transform, "PAUSA", new Vector2(415,270), new Vector2(150,58), ShowPause);
+        pauseButton = Button("Pausa", transform, "PAUSA", new Vector2(415,270), new Vector2(150,58), ShowPause);
+        // La pausa se abre solo con el botón del mando.
+        pauseButton.gameObject.SetActive(false);
 
         pausePanel = Panel("CanvasPause", "PAUSA", "Puedes continuar o finalizar la exposición.");
         Button("Continuar", pausePanel.transform, "Continuar", new Vector2(0,75), new Vector2(420,62), Resume);
@@ -154,6 +207,7 @@ public sealed class GlobalSessionUI : MonoBehaviour
         resultText = Label("Metricas", resultPanel.transform, "", 21, new Vector2(0,15), new Vector2(780,240));
         nextButton = Button("Siguiente", resultPanel.transform, "Siguiente nivel", new Vector2(-205,-190), new Vector2(360,62), NextLevel);
         Button("Menu", resultPanel.transform, "Menú principal", new Vector2(205,-190), new Vector2(360,62), FinishAndShowSummary);
+        Label("Ayuda", resultPanel.transform, "Control derecho: A = Siguiente nivel · B = Menú principal", 18, new Vector2(0,-245), new Vector2(780,30));
         resultPanel.SetActive(false);
 
         summaryPanel = Panel("CanvasSessionSummary", "Resumen de sesión", "Datos registrados localmente");
@@ -246,11 +300,24 @@ public sealed class GlobalSessionUI : MonoBehaviour
         GameStateManager.SetState(GameState.PLAYING);
     }
 
+    // Progresión: 1 -> 2 -> 3 -> 4 -> 5. Nivel5 cierra la sesión.
+    private static int NextLevelOf(int completedLevel)
+    {
+        switch (completedLevel)
+        {
+            case 1: return 2;
+            case 2: return 3;
+            case 3: return 4;
+            case 4: return 5;
+            default: return 0;
+        }
+    }
+
     private void NextLevel()
     {
-        if (level != 3 && level != 4) return;
+        int next = NextLevelOf(level);
+        if (next <= 0) return;
         Time.timeScale = 1f;
-        int next = level + 1;
         if (LevelManager.Instance != null) LevelManager.Instance.LoadLevel(next);
         else SceneManager.LoadScene("Nivel" + next);
     }

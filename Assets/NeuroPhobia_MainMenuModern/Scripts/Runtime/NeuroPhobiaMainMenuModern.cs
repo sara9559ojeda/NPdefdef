@@ -37,6 +37,12 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
     private static string localName = "";
     private static string localEmail = "";
     private TMP_Text feedbackText;
+    // Nivel elegido en "ELEGIR NIVEL"; 0 = flujo normal desde el nivel inicial.
+    private int selectedLevel;
+
+    // Decisión de Sara (D17, 2026-10-30): el selector existe para probar todos los niveles.
+    // Solo en Editor y builds de desarrollo; en la build de entrega se empieza siempre por el nivel inicial (RQF009).
+    private static bool LevelSelectorEnabled => Application.isEditor || Debug.isDebugBuild;
 
     private static readonly Color Background =
         new Color(0.025f, 0.035f, 0.055f, 1f);
@@ -108,6 +114,7 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
 
         BuildBackground(uiRoot.transform);
         BuildMainPanel(uiRoot.transform);
+        BuildLevelsPanel(uiRoot.transform);
         BuildInstructionsPanel(uiRoot.transform);
         BuildSessionPanels(uiRoot.transform);
 
@@ -365,18 +372,35 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
             actionCard.transform,
             "Iniciar",
             "INICIAR EXPERIENCIA",
-            new Vector2(0.10f, 0.54f),
-            new Vector2(0.90f, 0.67f),
+            new Vector2(0.10f, 0.58f),
+            new Vector2(0.90f, 0.69f),
             Accent,
             Color.black,
             StartExperience);
 
         CreateMenuButton(
             actionCard.transform,
+            "SeleccionarNivel",
+            "ELEGIR NIVEL",
+            new Vector2(0.10f, 0.45f),
+            new Vector2(0.90f, 0.56f),
+            AccentBlue,
+            Color.white,
+            ShowLevels);
+
+        if (!LevelSelectorEnabled)
+        {
+            helper.gameObject.SetActive(false);
+            Transform selectorButton = actionCard.transform.Find("SeleccionarNivel");
+            if (selectorButton != null) selectorButton.gameObject.SetActive(false);
+        }
+
+        CreateMenuButton(
+            actionCard.transform,
             "ElegirNivel",
             "MIS DATOS",
-            new Vector2(0.10f, 0.38f),
-            new Vector2(0.90f, 0.51f),
+            new Vector2(0.10f, 0.32f),
+            new Vector2(0.90f, 0.43f),
             AccentBlue,
             Color.white,
             ShowProfile);
@@ -385,8 +409,8 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
             actionCard.transform,
             "Instrucciones",
             "CONTROLES E INSTRUCCIONES",
-            new Vector2(0.10f, 0.22f),
-            new Vector2(0.90f, 0.35f),
+            new Vector2(0.10f, 0.19f),
+            new Vector2(0.90f, 0.30f),
             new Color(0.13f, 0.16f, 0.21f, 1f),
             Color.white,
             ShowInstructions);
@@ -395,8 +419,8 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
             actionCard.transform,
             "Salir",
             "SALIR",
-            new Vector2(0.10f, 0.08f),
-            new Vector2(0.90f, 0.19f),
+            new Vector2(0.10f, 0.06f),
+            new Vector2(0.90f, 0.17f),
             new Color(0.17f, 0.10f, 0.13f, 1f),
             new Color(0.95f, 0.70f, 0.74f, 1f),
             QuitGame);
@@ -467,7 +491,7 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
             "PSICOEDUCACIÓN",
             "Respiración y exposición mediante imágenes.",
             0.62f,
-            () => LoadLevel("Nivel1"));
+            () => ChooseLevel(1));
 
         CreateLevelButton(
             card.transform,
@@ -475,7 +499,7 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
             "DISTANCIA SEGURA",
             "Observación continua de una araña a distancia.",
             0.49f,
-            () => LoadLevel("Nivel2"));
+            () => ChooseLevel(2));
 
         CreateLevelButton(
             card.transform,
@@ -483,7 +507,7 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
             "APROXIMACIÓN PROGRESIVA",
             "Acércate mediante puntos de exposición controlados.",
             0.36f,
-            () => LoadLevel("Nivel3"));
+            () => ChooseLevel(3));
 
         CreateLevelButton(
             card.transform,
@@ -491,7 +515,7 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
             "CONTACTO VIRTUAL",
             "Interacción cercana en un entorno doméstico.",
             0.23f,
-            () => LoadLevel("Nivel4"));
+            () => ChooseLevel(4));
 
         CreateLevelButton(
             card.transform,
@@ -499,7 +523,7 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
             "DESAFÍO FINAL",
             "Integra lo aprendido en un escenario más complejo.",
             0.10f,
-            () => LoadLevel("Nivel5"));
+            () => ChooseLevel(5));
 
         CreateMenuButton(
             card.transform,
@@ -931,6 +955,15 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
     public void ShowLevels()
     {
         ShowMain();
+        mainPanel.SetActive(false);
+        levelsPanel.SetActive(true);
+    }
+
+    // Elegir un nivel pasa por consentimiento y evaluación inicial para abrir la sesión.
+    private void ChooseLevel(int level)
+    {
+        selectedLevel = LevelSelectorEnabled ? level : 0;
+        ShowConsent();
     }
 
     public void ShowInstructions()
@@ -953,6 +986,7 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
 
     public void StartExperience()
     {
+        selectedLevel = 0;
         ShowConsent();
     }
 
@@ -1029,8 +1063,10 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
             feedbackText.text = "No se encontró SessionManager.";
             return;
         }
-        SessionManager.Instance.StartSession(grade);
-        int initialLevel = SessionManager.Instance.ResolveInitialLevel(grade);
+        bool testSession = LevelSelectorEnabled && selectedLevel > 0;
+        SessionManager.Instance.StartSession(grade, testSession);
+        int initialLevel = testSession ? selectedLevel : SessionManager.Instance.ResolveInitialLevel(grade);
+        selectedLevel = 0;
         SessionManager.Instance.CurrentLevel = initialLevel;
         LoadLevel("Nivel" + initialLevel);
     }
@@ -1058,11 +1094,9 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
 
     public void LoadLevel(string sceneName)
     {
-        if (SessionManager.Instance == null || SessionManager.Instance.GetReport() == null ||
-            sceneName != "Nivel" + SessionManager.Instance.ResolveInitialLevel(SessionManager.Instance.PhobiaGrade) ||
-            sceneName == "Nivel2" || sceneName == "Nivel5")
+        if (SessionManager.Instance == null || SessionManager.Instance.GetReport() == null)
         {
-            if (feedbackText != null) feedbackText.text = "Inicia desde la evaluación inicial. El escenario nuevo de Nivel 2 está pendiente.";
+            if (feedbackText != null) feedbackText.text = "Inicia desde la evaluación inicial.";
             return;
         }
         if (!Application.CanStreamedLevelBeLoaded(sceneName))

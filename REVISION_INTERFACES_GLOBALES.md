@@ -8,7 +8,7 @@
 - `GlobalSessionUI`: una interfaz por escena jugable (Nivel1, Nivel3, Nivel4), con botón de pausa visible, menú de pausa, controles básicos, confirmación de salida, resultado de nivel y resumen de sesión. Se instancia al cargar la escena sin editarla. Conserva los HUD propios de los niveles y no añade otra barra de progreso.
 - `GameStateManager` pausa arañas en PAUSED/LEVEL_COMPLETE/SESSION_END. La pausa usa `Time.timeScale = 0`; la UI usa eventos independientes del tiempo de juego.
 - La salida de emergencia agrega métricas disponibles con `levelPassed = false`, cierra el reporte local y vuelve a MainMenu.
-- Las finalizaciones conectadas agregan métricas una sola vez por nivel. Nivel1 y Nivel4 no avanzan automáticamente a los escenarios pendientes. Nivel3 ofrece avance manual a Nivel4.
+- Las finalizaciones conectadas agregan métricas una sola vez por nivel. Nivel1 y Nivel4 no avanzan automáticamente a los escenarios pendientes. Nivel3 ofrece avance manual a Nivel4. Actualización 2026-10-16 (rama `feature/integracion-backend-ia`): Siguiente sigue Nivel1 → Nivel3 → Nivel4 → Nivel5; Nivel2 sigue bloqueado.
 - `SessionManager` conserva `phobiaGrade`, mide la duración total con reloj real, evita cierres y registros duplicados y expone `ResolveInitialLevel` como lugar explícito para la tabla futura de asignación. Por ahora retorna Nivel1 para todo grado válido.
 - Se conserva `FastAPIClient` y su comportamiento no bloqueante ante fallos de red.
 

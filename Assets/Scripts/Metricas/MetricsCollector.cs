@@ -8,6 +8,8 @@ public class MetricsCollector : MonoBehaviour
     public Transform spider;
     private AranaController[] level5Spiders;
     public string spiderLayerName = "Spider";
+    [Tooltip("Velocidad mínima (m/s) del jugador alejándose de la araña para contar un intento de alejamiento.")]
+    public float avoidanceRetreatSpeed = 0.8f;
 
     private float levelStartTime;
     private float gazeTimeOnSpider;
@@ -18,7 +20,9 @@ public class MetricsCollector : MonoBehaviour
     private int handWithdrawals;
     private float handContactDuration;
     private Quaternion lastHeadRotation;
-    private float headMovementFrequency;
+    private float headMovementSum;
+    private int headMovementSamples;
+    private bool wasRetreating;
     private float sampleTimer;
     private Vector3 lastPlayerPosition;
     private readonly List<string> taskCompletions = new List<string>();
@@ -60,7 +64,7 @@ public class MetricsCollector : MonoBehaviour
             level = level,
             gazeTimeOnSpider = gazeTimeOnSpider,
             avoidanceAttempts = avoidanceAttempts,
-            headMovementFrequency = headMovementFrequency,
+            headMovementFrequency = headMovementSamples > 0 ? headMovementSum / headMovementSamples : 0f,
             proximityMin = proximityMin == float.MaxValue ? -1f : proximityMin,
             taskCompletions = new List<string>(taskCompletions),
             breathingActivations = breathingActivations,
@@ -94,7 +98,9 @@ public class MetricsCollector : MonoBehaviour
         if (sampleTimer < 0.5f) return;
 
         float deltaAngle = Quaternion.Angle(lastHeadRotation, player.rotation);
-        headMovementFrequency = deltaAngle / sampleTimer / 90f;
+        // Promedio del nivel: se acumula cada muestra y BuildMetrics devuelve la media.
+        headMovementSum += deltaAngle / sampleTimer / 90f;
+        headMovementSamples++;
 
         Transform nearestSpider = spider;
         if (level5Spiders != null)
@@ -112,9 +118,16 @@ public class MetricsCollector : MonoBehaviour
             float distance = Vector3.Distance(player.position, nearestSpider.position);
             if (distance < proximityMin) proximityMin = distance;
 
-            float moved = Vector3.Distance(player.position, lastPlayerPosition);
-            bool movedAwayFromSpider = Vector3.Distance(player.position, nearestSpider.position) > Vector3.Distance(lastPlayerPosition, nearestSpider.position);
-            if (movedAwayFromSpider && moved > 2f && sampleTimer <= 1f) avoidanceAttempts++;
+            // Solo cuenta el desplazamiento del jugador en dirección opuesta a la araña (no el movimiento de la araña).
+            // Un intento = un episodio continuo de retroceso que supera avoidanceRetreatSpeed.
+            Vector3 awayFromSpider = lastPlayerPosition - nearestSpider.position;
+            awayFromSpider.y = 0f;
+            Vector3 playerDelta = player.position - lastPlayerPosition;
+            playerDelta.y = 0f;
+            float retreatSpeed = awayFromSpider.sqrMagnitude > 0.0001f ? Vector3.Dot(playerDelta, awayFromSpider.normalized) / sampleTimer : 0f;
+            bool retreating = retreatSpeed >= avoidanceRetreatSpeed && sampleTimer <= 1f;
+            if (retreating && !wasRetreating) avoidanceAttempts++;
+            wasRetreating = retreating;
         }
 
         lastHeadRotation = player.rotation;

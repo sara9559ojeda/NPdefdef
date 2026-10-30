@@ -107,11 +107,12 @@ public class NPLevel3RealOrbs : MonoBehaviour
         var panel = new GameObject("Panel", typeof(RectTransform), typeof(Image));
         panel.transform.SetParent(root.transform, false);
         var pr = panel.GetComponent<RectTransform>();
-        pr.anchorMin = new Vector2(.5f, 1);
-        pr.anchorMax = new Vector2(.5f, 1);
-        pr.pivot = new Vector2(.5f, 1);
+        pr.anchorMin = Vector2.zero;
+        pr.anchorMax = Vector2.zero;
+        pr.pivot = Vector2.zero;
         pr.sizeDelta = new Vector2(520, 135);
-        pr.anchoredPosition = new Vector2(0, -18);
+        pr.anchoredPosition = new Vector2(18, 18);
+        pr.localScale = Vector3.one * .75f;
         panel.GetComponent<Image>().color = new Color(.02f,.035f,.05f,.92f);
 
         var title = MakeText(panel.transform, "NIVEL 3 · APROXIMACIÓN PROGRESIVA", 22, FontStyles.Bold);

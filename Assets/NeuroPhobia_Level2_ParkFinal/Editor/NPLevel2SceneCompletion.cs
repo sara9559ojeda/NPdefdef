@@ -68,7 +68,6 @@ public static class NPLevel2SceneCompletion
         gaze.requiredSeconds = 30f;
         gaze.acceptedGazeAngle = 12f;
         gaze.gazeGraceSeconds = 0.35f;
-        gaze.nextScene = "Nivel3";
         gaze.spiderRenderer = spider.GetComponentInChildren<Renderer>(true);
 
         var safe = setup.GetComponent<NeuroPhobiaLevel2SafeDistance>() ?? setup.AddComponent<NeuroPhobiaLevel2SafeDistance>();

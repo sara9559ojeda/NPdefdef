@@ -28,14 +28,16 @@ public class AdaptiveCommandPoller : MonoBehaviour
 
     private void HandleCommand(string command)
     {
-        if (command == "pause") StartCoroutine(PauseTemporarily());
-        else if (command == "resume") GameStateManager.SetState(GameState.PLAYING);
+        // pause solo actua durante el juego (se ignora en LEVEL_COMPLETE, SESSION_END, menu o pausa manual);
+        // resume solo deshace una pausa de respiracion iniciada por el backend.
+        if (command == "pause" && GameStateManager.CurrentState == GameState.PLAYING) StartCoroutine(PauseTemporarily());
+        else if (command == "resume" && GameStateManager.CurrentState == GameState.BREATHING) GameStateManager.SetState(GameState.PLAYING);
     }
 
     private IEnumerator PauseTemporarily()
     {
         GameStateManager.SetState(GameState.BREATHING);
         yield return new WaitForSeconds(pauseSeconds);
-        GameStateManager.SetState(GameState.PLAYING);
+        if (GameStateManager.CurrentState == GameState.BREATHING) GameStateManager.SetState(GameState.PLAYING);
     }
 }

@@ -28,7 +28,8 @@ public class SessionManager : MonoBehaviour
         apiClient = GetComponent<FastAPIClient>();
     }
 
-    public void StartSession(int phobiaGrade)
+    /// <param name="testSession">true si se abrió desde el selector de nivel (solo builds de desarrollo); el reporte lo marca para excluirlo del análisis.</param>
+    public void StartSession(int phobiaGrade, bool testSession = false)
     {
         SessionId = Guid.NewGuid().ToString();
         if (phobiaGrade < 1 || phobiaGrade > 5) throw new ArgumentOutOfRangeException(nameof(phobiaGrade));
@@ -41,7 +42,8 @@ public class SessionManager : MonoBehaviour
         {
             sessionId = SessionId,
             phobiaGrade = PhobiaGrade,
-            timestamp = DateTime.UtcNow.ToString("o")
+            timestamp = DateTime.UtcNow.ToString("o"),
+            testSession = testSession
         };
 
         if (apiClient != null) StartCoroutine(apiClient.PostSessionStart(SessionId, PhobiaGrade));

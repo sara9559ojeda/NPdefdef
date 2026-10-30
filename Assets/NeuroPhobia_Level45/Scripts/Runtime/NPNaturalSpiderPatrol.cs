@@ -14,6 +14,16 @@ namespace NeuroPhobia.Level45
         public float pauseAtPoint = 0.9f;
         public bool loop = true;
 
+        [Header("Movimiento natural")]
+        [Tooltip("Segundos que tarda en alcanzar o perder la velocidad de marcha.")]
+        public float speedSmoothing = 0.6f;
+        [Tooltip("Desvío máximo (grados) del rumbo al caminar, para que no avance en línea perfecta.")]
+        public float wanderDegrees = 14f;
+        public float wanderFrequency = 0.3f;
+        [Tooltip("Cada cuántos segundos (mín, máx) se detiene un instante a mitad de camino.")]
+        public Vector2 stopInterval = new Vector2(3.5f, 8f);
+        public Vector2 stopDuration = new Vector2(0.4f, 1.6f);
+
         [Header("Animación")]
         public Animator animator;
         public Transform visualRoot;
@@ -38,6 +48,10 @@ namespace NeuroPhobia.Level45
         private Vector3 visualBasePosition;
         private Quaternion visualBaseRotation;
         private Animator[] childAnimators;
+        private float currentSpeed;
+        private float wanderSeed;
+        private float nextStopTime;
+        private float animationScale = 1f;
 
         private void Awake()
         {
@@ -48,8 +62,42 @@ namespace NeuroPhobia.Level45
         {
             safePosition = transform.position;
             stableGroundY = transform.position.y;
+            wanderSeed = Random.value * 100f;
+            nextStopTime = Time.time + Random.Range(stopInterval.x, stopInterval.y);
             SnapToGround();
+            LiftVisualToGround();
             safePosition = transform.position;
+        }
+
+        // El pivote del modelo no siempre está en las patas: se sube (o baja) el visual
+        // hasta que su punto más bajo toque el suelo y no quede enterrado.
+        private void LiftVisualToGround()
+        {
+            if (visualRoot == null)
+            {
+                return;
+            }
+
+            Renderer[] renderers = GetComponentsInChildren<Renderer>();
+            if (renderers.Length == 0)
+            {
+                return;
+            }
+
+            Bounds bounds = renderers[0].bounds;
+            foreach (Renderer rendererComponent in renderers)
+            {
+                bounds.Encapsulate(rendererComponent.bounds);
+            }
+
+            float delta = (transform.position.y - groundOffset) - bounds.min.y;
+            if (Mathf.Abs(delta) < 0.005f)
+            {
+                return;
+            }
+
+            visualRoot.position += Vector3.up * delta;
+            visualBasePosition = visualRoot.localPosition;
         }
 
         private void Update()
@@ -66,6 +114,7 @@ namespace NeuroPhobia.Level45
                 waypoints.Length == 0 ||
                 Time.time < waitingUntil)
             {
+                currentSpeed = 0f;
                 UpdateAnimation(false);
                 return;
             }
@@ -82,18 +131,34 @@ namespace NeuroPhobia.Level45
             Vector3 direction = destinationTransform.position - transform.position;
             direction.y = 0f;
 
-            if (direction.magnitude <= arrivalDistance)
+            float distance = direction.magnitude;
+
+            if (distance <= arrivalDistance)
             {
                 safePosition = transform.position;
-                waitingUntil = Time.time + pauseAtPoint;
+                currentSpeed = 0f;
+                waitingUntil = Time.time + pauseAtPoint * Random.Range(0.6f, 1.8f);
                 AdvanceWaypoint();
                 UpdateAnimation(false);
                 return;
             }
 
-            Quaternion desiredRotation = Quaternion.LookRotation(
-                direction.normalized,
-                Vector3.up);
+            // Parada breve a mitad de camino, como hacen las arañas al "escuchar" el entorno.
+            if (Time.time >= nextStopTime && distance > 1f)
+            {
+                currentSpeed = 0f;
+                waitingUntil = Time.time + Random.Range(stopDuration.x, stopDuration.y);
+                nextStopTime = waitingUntil + Random.Range(stopInterval.x, stopInterval.y);
+                UpdateAnimation(false);
+                return;
+            }
+
+            // Rumbo con un leve desvío suave (ruido) que se atenúa al acercarse al punto.
+            float wander = (Mathf.PerlinNoise(wanderSeed, Time.time * wanderFrequency) - 0.5f) * 2f
+                           * wanderDegrees * Mathf.Clamp01(distance / 2f);
+            Vector3 heading = Quaternion.Euler(0f, wander, 0f) * direction.normalized;
+
+            Quaternion desiredRotation = Quaternion.LookRotation(heading, Vector3.up);
 
             transform.rotation = Quaternion.Slerp(
                 transform.rotation,
@@ -104,23 +169,37 @@ namespace NeuroPhobia.Level45
                 transform.rotation,
                 desiredRotation);
 
-            bool moving = angle < 35f;
+            // Avanza mientras gira (curva); si el giro es muy cerrado casi se detiene.
+            float alignment = Mathf.Clamp01(1f - angle / 75f);
+            float approach = Mathf.Clamp01(distance / 0.8f + 0.3f);
+            float targetSpeed = moveSpeed * alignment * approach;
 
-            if (moving)
+            currentSpeed = Mathf.MoveTowards(
+                currentSpeed,
+                targetSpeed,
+                moveSpeed / Mathf.Max(speedSmoothing, 0.05f) * Time.deltaTime);
+
+            bool moving = currentSpeed > moveSpeed * 0.08f;
+
+            if (currentSpeed > 0.0001f)
             {
-                Vector3 nextPosition = Vector3.MoveTowards(
-                    transform.position,
-                    new Vector3(
-                        destinationTransform.position.x,
-                        transform.position.y,
-                        destinationTransform.position.z),
-                    moveSpeed * Time.deltaTime);
+                Vector3 forward = transform.forward;
+                forward.y = 0f;
+                Vector3 step = forward.normalized * currentSpeed * Time.deltaTime;
 
-                transform.position = nextPosition;
+                // Cerca del punto se acerca directo para no rodearlo sin llegar.
+                transform.position = distance < 0.4f
+                    ? Vector3.MoveTowards(
+                        transform.position,
+                        new Vector3(destinationTransform.position.x, transform.position.y, destinationTransform.position.z),
+                        currentSpeed * Time.deltaTime)
+                    : transform.position + step;
+
                 SnapToGround();
                 safePosition = transform.position;
             }
 
+            animationScale = Mathf.Clamp(currentSpeed / Mathf.Max(moveSpeed, 0.001f), 0.4f, 1.2f);
             UpdateAnimation(moving);
         }
 
@@ -363,7 +442,7 @@ namespace NeuroPhobia.Level45
 
                 childAnimator.enabled = true;
                 childAnimator.speed =
-                    pauseAnimations ? 0f : animationSpeed;
+                    pauseAnimations ? 0f : animationSpeed * animationScale;
             }
         }
 
