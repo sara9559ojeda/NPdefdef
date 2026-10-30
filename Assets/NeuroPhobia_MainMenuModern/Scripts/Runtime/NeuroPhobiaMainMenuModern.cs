@@ -40,6 +40,10 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
     // Nivel elegido en "ELEGIR NIVEL"; 0 = flujo normal desde el nivel inicial.
     private int selectedLevel;
 
+    // Decisión de Sara (D17, 2026-10-30): el selector existe para probar todos los niveles.
+    // Solo en Editor y builds de desarrollo; en la build de entrega se empieza siempre por el nivel inicial (RQF009).
+    private static bool LevelSelectorEnabled => Application.isEditor || Debug.isDebugBuild;
+
     private static readonly Color Background =
         new Color(0.025f, 0.035f, 0.055f, 1f);
 
@@ -383,6 +387,13 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
             AccentBlue,
             Color.white,
             ShowLevels);
+
+        if (!LevelSelectorEnabled)
+        {
+            helper.gameObject.SetActive(false);
+            Transform selectorButton = actionCard.transform.Find("SeleccionarNivel");
+            if (selectorButton != null) selectorButton.gameObject.SetActive(false);
+        }
 
         CreateMenuButton(
             actionCard.transform,
@@ -951,7 +962,7 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
     // Elegir un nivel pasa por consentimiento y evaluación inicial para abrir la sesión.
     private void ChooseLevel(int level)
     {
-        selectedLevel = level;
+        selectedLevel = LevelSelectorEnabled ? level : 0;
         ShowConsent();
     }
 
@@ -1052,8 +1063,9 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
             feedbackText.text = "No se encontró SessionManager.";
             return;
         }
-        SessionManager.Instance.StartSession(grade);
-        int initialLevel = selectedLevel > 0 ? selectedLevel : SessionManager.Instance.ResolveInitialLevel(grade);
+        bool testSession = LevelSelectorEnabled && selectedLevel > 0;
+        SessionManager.Instance.StartSession(grade, testSession);
+        int initialLevel = testSession ? selectedLevel : SessionManager.Instance.ResolveInitialLevel(grade);
         selectedLevel = 0;
         SessionManager.Instance.CurrentLevel = initialLevel;
         LoadLevel("Nivel" + initialLevel);

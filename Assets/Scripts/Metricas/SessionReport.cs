@@ -9,6 +9,8 @@ public class SessionReport
     public float totalDuration;
     public List<LevelMetrics> levelMetrics = new List<LevelMetrics>();
     public string timestamp;
+    // Sesión de prueba abierta con el selector de nivel: no se usa para el análisis ni la IA.
+    public bool testSession;
 }
 
 [Serializable]

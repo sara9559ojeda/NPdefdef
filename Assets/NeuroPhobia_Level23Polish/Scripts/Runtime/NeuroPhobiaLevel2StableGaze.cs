@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Globalization;
 using System.Linq;
 using TMPro;
@@ -20,7 +19,6 @@ public sealed class NeuroPhobiaLevel2StableGaze : MonoBehaviour
     [Range(3f, 25f)]
     public float acceptedGazeAngle = 12f;
     public float gazeGraceSeconds = 0.35f;
-    public string nextScene = "Nivel3";
 
     [Header("Referencias opcionales")]
     public Renderer spiderRenderer;
@@ -36,8 +34,6 @@ public sealed class NeuroPhobiaLevel2StableGaze : MonoBehaviour
     private TMP_Text bestText;
     private TMP_Text instructionText;
     private Image progressFill;
-
-    private Canvas completionCanvas;
 
     private const string BestKey = "NeuroPhobia_Level2_BestStableGaze";
 
@@ -57,6 +53,18 @@ public sealed class NeuroPhobiaLevel2StableGaze : MonoBehaviour
     private void Update()
     {
         if (completed)
+        {
+            return;
+        }
+
+        // Pausa global (GlobalSessionUI): el tiempo no cuenta y el HUD no tapa el panel.
+        bool playing = GameStateManager.CurrentState == GameState.PLAYING;
+        if (hudCanvas != null && hudCanvas.gameObject.activeSelf != playing)
+        {
+            hudCanvas.gameObject.SetActive(playing);
+        }
+
+        if (!playing)
         {
             return;
         }
@@ -105,7 +113,7 @@ public sealed class NeuroPhobiaLevel2StableGaze : MonoBehaviour
                 currentTime = requiredSeconds;
                 SaveBest();
                 UpdateHud(true);
-                StartCoroutine(CompleteLevel());
+                CompleteLevel();
                 return;
             }
         }
@@ -613,11 +621,13 @@ public sealed class NeuroPhobiaLevel2StableGaze : MonoBehaviour
         PlayerPrefs.Save();
     }
 
-    private IEnumerator CompleteLevel()
+    // Mismo cierre que Nivel1, Nivel3 y Nivel4: GlobalSessionUI muestra el panel de nivel completado
+    // (Siguiente nivel / Menú principal) en lugar de saltar solo a Nivel3.
+    private void CompleteLevel()
     {
         if (completed)
         {
-            yield break;
+            return;
         }
 
         completed = true;
@@ -636,102 +646,13 @@ public sealed class NeuroPhobiaLevel2StableGaze : MonoBehaviour
             hudCanvas.gameObject.SetActive(false);
         }
 
-        BuildCompletionScreen();
-        AttachHudToCamera(GetActiveGameplayCamera());
-
-        float oldScale = Time.timeScale;
-        Time.timeScale = 0f;
-
-        float finishTime =
-            Time.realtimeSinceStartup + 5f;
-
-        while (Time.realtimeSinceStartup < finishTime)
-        {
-            yield return null;
-        }
-
-        Time.timeScale =
-            oldScale > 0f ? oldScale : 1f;
-
-        if (Application.CanStreamedLevelBeLoaded(nextScene))
-        {
-            SceneManager.LoadSceneAsync(nextScene);
-        }
-        else
-        {
-            Debug.LogError(
-                "NeuroPhobia Nivel2: no se puede cargar " +
-                nextScene +
-                ". Verifica que la escena esté agregada al Build.");
-        }
-    }
-
-    private void BuildCompletionScreen()
-    {
-        GameObject root =
-            new GameObject("NP_Nivel2_Completado", typeof(RectTransform));
-
-        root.transform.SetParent(transform, false);
-
-        completionCanvas = root.AddComponent<Canvas>();
-        completionCanvas.renderMode = RenderMode.WorldSpace;
-        root.GetComponent<RectTransform>().sizeDelta = new Vector2(1280f, 720f);
-        completionCanvas.overrideSorting = true;
-        completionCanvas.sortingOrder = 32760;
-
-        CanvasScaler scaler =
-            root.AddComponent<CanvasScaler>();
-
-        scaler.uiScaleMode =
-            CanvasScaler.ScaleMode.ScaleWithScreenSize;
-
-        scaler.referenceResolution =
-            new Vector2(1280f, 720f);
-
-        GameObject background =
-            new GameObject(
-                "Fondo",
-                typeof(RectTransform));
-
-        background.transform.SetParent(
-            root.transform,
-            false);
-
-        RectTransform backgroundRect =
-            background.GetComponent<RectTransform>();
-
-        SetRect(
-            backgroundRect,
-            Vector2.zero,
-            Vector2.one);
-
-        Image image = background.AddComponent<Image>();
-        image.color =
-            new Color(0.02f, 0.03f, 0.05f, 0.98f);
-
-        TMP_Text text =
-            CreateText(
-                background.transform,
-                "Mensaje",
-                45f,
-                FontStyles.Bold);
-
-        text.text =
-            "¡Felicitaciones!\n\n" +
-            "Completaste el Nivel 2\n\n" +
-            "El Nivel 3 comenzará en 5 segundos.";
-
-        SetRect(
-            text.rectTransform,
-            new Vector2(0.10f, 0.18f),
-            new Vector2(0.90f, 0.82f));
+        GlobalSessionUI.CompleteLevel(2);
     }
 
     private void AttachHudToCamera(Camera camera)
     {
         if (camera == null) return;
         Attach(hudCanvas, camera, 1.1f, 0.0012f);
-        Attach(completionCanvas, camera, 1.5f, 0.0015f);
     }
 
     private static void Attach(Canvas canvas, Camera camera, float distance, float scale)

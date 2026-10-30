@@ -41,7 +41,7 @@ public sealed class GlobalSessionUI : MonoBehaviour
         if (current != null) Destroy(current.gameObject);
         current = null;
         if (!scene.name.StartsWith("Nivel") || !int.TryParse(scene.name.Substring(5), out int number) ||
-            (number != 1 && number != 3 && number != 4 && number != 5)) return;
+            number < 1 || number > 5) return;
         GameObject root = new GameObject("NP_GlobalSessionUI", typeof(RectTransform));
         current = root.AddComponent<GlobalSessionUI>();
         current.level = number;
