@@ -1,1 +1,0 @@
-Audios esperados: respiracion_478.ogg, narracion_nivel1.ogg, calma_adaptativa.ogg, ambiente_nivel1.ogg
