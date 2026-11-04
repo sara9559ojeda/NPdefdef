@@ -11,6 +11,7 @@ public class SessionManager : MonoBehaviour
     public int PhobiaGrade { get; private set; }
 
     private SessionReport report;
+    private readonly System.Collections.Generic.Dictionary<int, int> levelRetries = new System.Collections.Generic.Dictionary<int, int>();
     private float sessionStartTime;
     private bool ended;
     private FastAPIClient apiClient;
@@ -35,6 +36,7 @@ public class SessionManager : MonoBehaviour
         if (phobiaGrade < 1 || phobiaGrade > 5) throw new ArgumentOutOfRangeException(nameof(phobiaGrade));
         PhobiaGrade = phobiaGrade;
         CurrentLevel = 1;
+        levelRetries.Clear();
         sessionStartTime = Time.realtimeSinceStartup;
         ended = false;
 
@@ -48,6 +50,18 @@ public class SessionManager : MonoBehaviour
 
         if (apiClient != null) StartCoroutine(apiClient.PostSessionStart(SessionId, PhobiaGrade));
         Debug.Log($"NeuroPhobia: sesion iniciada {SessionId}");
+    }
+
+    /// <summary>Cuenta una repetición de un nivel (se refleja en «intentos de nivel»).</summary>
+    public void RegisterLevelRetry(int level)
+    {
+        levelRetries.TryGetValue(level, out int current);
+        levelRetries[level] = current + 1;
+    }
+
+    public int LevelRetries(int level)
+    {
+        return levelRetries.TryGetValue(level, out int current) ? current : 0;
     }
 
     public void AddLevelMetrics(LevelMetrics metrics)

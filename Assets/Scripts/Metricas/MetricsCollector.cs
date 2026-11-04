@@ -30,6 +30,7 @@ public class MetricsCollector : MonoBehaviour
     private void Start()
     {
         levelStartTime = Time.time;
+        if (SessionManager.Instance != null) levelAttempts = SessionManager.Instance.LevelRetries(level);
         if (player == null && Camera.main != null) player = Camera.main.transform;
         if (player != null)
         {

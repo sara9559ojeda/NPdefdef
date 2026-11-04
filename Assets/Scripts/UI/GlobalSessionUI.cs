@@ -17,6 +17,8 @@ public sealed class GlobalSessionUI : MonoBehaviour
     private GameObject resultPanel;
     private GameObject summaryPanel;
     private GameObject optionsPanel;
+    private GameObject repeatPanel;
+    private TMP_Text repeatText;
     private TMP_Text resultText;
     private TMP_Text summaryText;
     private Button nextButton;
@@ -80,6 +82,11 @@ public sealed class GlobalSessionUI : MonoBehaviour
             if (nextButton.interactable && nextAction.WasPressedThisFrame()) NextLevel();
             else if (menuAction.WasPressedThisFrame()) FinishAndShowSummary();
         }
+        else if (completed && repeatPanel != null && repeatPanel.activeSelf)
+        {
+            if (nextAction.WasPressedThisFrame()) RepeatLevel();
+            else if (menuAction.WasPressedThisFrame()) EndAndMenu();
+        }
     }
 
     private void OnDestroy()
@@ -142,6 +149,36 @@ public sealed class GlobalSessionUI : MonoBehaviour
         pauseButton.gameObject.SetActive(false);
         DisableOtherRaycasters();
         resultPanel.SetActive(true);
+    }
+
+    /// <summary>Ofrece repetir el nivel con la misma interfaz de sesión. Devuelve false si no hay interfaz para ese nivel.</summary>
+    public static bool OfferRepeat(int offeredLevel, string message)
+    {
+        if (current == null || current.level != offeredLevel || current.repeatPanel == null) return false;
+        current.ShowRepeat(message);
+        return true;
+    }
+
+    public static bool IsRepeatOffered => current != null && current.repeatPanel != null && current.repeatPanel.activeSelf;
+
+    private void ShowRepeat(string message)
+    {
+        completed = true;
+        GameStateManager.SetState(GameState.LEVEL_COMPLETE);
+        Time.timeScale = 0f;
+        HidePanels();
+        repeatText.text = message;
+        pauseButton.gameObject.SetActive(false);
+        DisableOtherRaycasters();
+        repeatPanel.SetActive(true);
+    }
+
+    private void RepeatLevel()
+    {
+        if (SessionManager.Instance != null) SessionManager.Instance.RegisterLevelRetry(level);
+        Time.timeScale = 1f;
+        GameStateManager.SetState(GameState.PLAYING);
+        SceneManager.LoadScene("Nivel" + level);
     }
 
     private LevelMetrics Capture(bool passed)
@@ -209,6 +246,14 @@ public sealed class GlobalSessionUI : MonoBehaviour
         Button("Menu", resultPanel.transform, "Menú principal", new Vector2(205,-190), new Vector2(360,62), FinishAndShowSummary);
         Label("Ayuda", resultPanel.transform, "Control derecho: A = Siguiente nivel · B = Menú principal", 18, new Vector2(0,-245), new Vector2(780,30));
         resultPanel.SetActive(false);
+
+        // Oferta de repetir el nivel (p. ej. Nivel5 con demasiados intentos de alejamiento). Textos pendientes de aprobar por Sara.
+        repeatPanel = Panel("CanvasRepeat", "Repetir nivel", "");
+        repeatText = repeatPanel.transform.Find("Descripcion").GetComponent<TMP_Text>();
+        Button("Repetir", repeatPanel.transform, "Repetir nivel", new Vector2(-205,-190), new Vector2(360,62), RepeatLevel);
+        Button("Menu", repeatPanel.transform, "Menú principal", new Vector2(205,-190), new Vector2(360,62), EndAndMenu);
+        Label("Ayuda", repeatPanel.transform, "Control derecho: A = Repetir nivel · B = Menú principal", 18, new Vector2(0,-245), new Vector2(780,30));
+        repeatPanel.SetActive(false);
 
         summaryPanel = Panel("CanvasSessionSummary", "Resumen de sesión", "Datos registrados localmente");
         summaryText = Label("Reporte", summaryPanel.transform, "", 19, new Vector2(0,10), new Vector2(780,340));
@@ -324,7 +369,7 @@ public sealed class GlobalSessionUI : MonoBehaviour
 
     private void EndAndMenu()
     {
-        if (!completed) Capture(false);
+        if (!completed || IsRepeatOffered) Capture(false);
         if (SessionManager.Instance != null) SessionManager.Instance.EndSession();
         GameStateManager.SetState(GameState.MENU);
         Time.timeScale = 1f;
