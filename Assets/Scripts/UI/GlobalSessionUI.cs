@@ -6,6 +6,7 @@ using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using UnityEngine.XR.Interaction.Toolkit.UI;
 using UnityEngine.InputSystem;
+using UI = NeuroPhobiaUITheme;
 
 /// <summary>Una sola interfaz de sesión por escena jugable; no modifica las escenas XR.</summary>
 public sealed class GlobalSessionUI : MonoBehaviour
@@ -69,6 +70,7 @@ public sealed class GlobalSessionUI : MonoBehaviour
         {
             if (apiClient == null) apiClient = FindFirstObjectByType<FastAPIClient>();
             syncText.text = apiClient != null ? apiClient.SyncStatusText() : "";
+            syncText.color = SyncColor(apiClient);
         }
 
         bool escapePressed = false;
@@ -153,7 +155,7 @@ public sealed class GlobalSessionUI : MonoBehaviour
         LevelMetrics metrics = Capture(true);
         GameStateManager.SetState(GameState.LEVEL_COMPLETE);
         Time.timeScale = 0f;
-        resultText.text = "Nivel completado\nHas finalizado esta etapa de exposición.\n" + MetricsText(metrics);
+        resultText.text = MetricsColumns(MetricsText(metrics));
         nextButton.interactable = NextLevelOf(level) > 0;
         pauseButton.gameObject.SetActive(false);
         DisableOtherRaycasters();
@@ -234,90 +236,126 @@ public sealed class GlobalSessionUI : MonoBehaviour
         // La pausa se abre solo con el botón del mando.
         pauseButton.gameObject.SetActive(false);
 
-        pausePanel = Panel("CanvasPause", "PAUSA", "Puedes continuar o finalizar la exposición.");
-        Button("Continuar", pausePanel.transform, "Continuar", new Vector2(0,75), new Vector2(420,62), Resume);
-        Button("Opciones", pausePanel.transform, "Opciones", new Vector2(0,-5), new Vector2(420,62), ShowOptions);
-        Button("Menu", pausePanel.transform, "Volver al menú principal", new Vector2(0,-85), new Vector2(420,62), EndAndMenu);
-        Button("Emergencia", pausePanel.transform, "Salida de emergencia", new Vector2(0,-165), new Vector2(420,62), ShowConfirm);
+        pausePanel = Panel("CanvasPause", "Pausa", "Puedes continuar o finalizar la exposición.");
+        Button("Continuar", pausePanel.transform, "Continuar", new Vector2(0,75), new Vector2(480,68), Resume, UI.ButtonKind.Primary);
+        Button("Opciones", pausePanel.transform, "Opciones", new Vector2(0,-7), new Vector2(480,68), ShowOptions);
+        Button("Menu", pausePanel.transform, "Volver al menú principal", new Vector2(0,-89), new Vector2(480,68), EndAndMenu);
+        Button("Emergencia", pausePanel.transform, "Salida de emergencia", new Vector2(0,-171), new Vector2(480,68), ShowConfirm, UI.ButtonKind.Alert);
         pausePanel.SetActive(false);
 
         confirmPanel = Panel("CanvasEmergency", "Detener exposición", "¿Deseas finalizar esta exposición y volver al menú?");
-        Button("Si", confirmPanel.transform, "Sí, finalizar", new Vector2(0,-20), new Vector2(420,62), EmergencyExit);
-        Button("No", confirmPanel.transform, "Continuar sesión", new Vector2(0,-105), new Vector2(420,62), Resume);
+        Button("Si", confirmPanel.transform, "Sí, finalizar", new Vector2(0,-20), new Vector2(480,68), EmergencyExit, UI.ButtonKind.Alert);
+        Button("No", confirmPanel.transform, "Continuar sesión", new Vector2(0,-105), new Vector2(480,68), Resume, UI.ButtonKind.Primary);
         confirmPanel.SetActive(false);
 
         optionsPanel = Panel("CanvasOptions", "Opciones / Controles", "Usa los controles existentes de movimiento e interacción.\nPuedes abrir pausa con este botón. En PC, Escape si está disponible.");
-        Button("Volver", optionsPanel.transform, "Volver", new Vector2(0,-120), new Vector2(420,62), ShowPause);
+        Button("Volver", optionsPanel.transform, "Volver", new Vector2(0,-150), new Vector2(480,68), ShowPause);
         optionsPanel.SetActive(false);
 
-        resultPanel = Panel("CanvasLevelComplete", "Nivel completado", "");
-        resultText = Label("Metricas", resultPanel.transform, "", 21, new Vector2(0,15), new Vector2(780,240));
-        nextButton = Button("Siguiente", resultPanel.transform, "Siguiente nivel", new Vector2(-205,-190), new Vector2(360,62), NextLevel);
-        Button("Menu", resultPanel.transform, "Menú principal", new Vector2(205,-190), new Vector2(360,62), FinishAndShowSummary);
-        Label("Ayuda", resultPanel.transform, "Control derecho: A = Siguiente nivel · B = Menú principal", 18, new Vector2(0,-245), new Vector2(780,30));
+        resultPanel = Panel("CanvasLevelComplete", "Nivel completado", "Has finalizado esta etapa de exposición.");
+        resultText = Label("Metricas", resultPanel.transform, "", 21, new Vector2(0,-5), new Vector2(820,250));
+        resultText.alignment = TextAlignmentOptions.TopLeft;
+        nextButton = Button("Siguiente", resultPanel.transform, "Siguiente nivel", new Vector2(-210,-200), new Vector2(400,68), NextLevel, UI.ButtonKind.Primary);
+        Button("Menu", resultPanel.transform, "Menú principal", new Vector2(210,-200), new Vector2(400,68), FinishAndShowSummary);
+        Label("Ayuda", resultPanel.transform, "Control derecho: A = Siguiente nivel · B = Menú principal", 18, new Vector2(0,-265), new Vector2(820,30), UI.Face.Type, UI.InkSoft);
         resultPanel.SetActive(false);
 
         // Oferta de repetir el nivel (p. ej. Nivel5 con demasiados intentos de alejamiento).
         repeatPanel = Panel("CanvasRepeat", "Repetir nivel", "");
         repeatText = repeatPanel.transform.Find("Descripcion").GetComponent<TMP_Text>();
-        Button("Repetir", repeatPanel.transform, "Repetir nivel", new Vector2(-205,-190), new Vector2(360,62), RepeatLevel);
-        Button("Menu", repeatPanel.transform, "Menú principal", new Vector2(205,-190), new Vector2(360,62), EndAndMenu);
-        Label("Ayuda", repeatPanel.transform, "Control derecho: A = Repetir nivel · B = Menú principal", 18, new Vector2(0,-245), new Vector2(780,30));
+        Button("Repetir", repeatPanel.transform, "Repetir nivel", new Vector2(-210,-200), new Vector2(400,68), RepeatLevel, UI.ButtonKind.Primary);
+        Button("Menu", repeatPanel.transform, "Menú principal", new Vector2(210,-200), new Vector2(400,68), EndAndMenu);
+        Label("Ayuda", repeatPanel.transform, "Control derecho: A = Repetir nivel · B = Menú principal", 18, new Vector2(0,-265), new Vector2(820,30), UI.Face.Type, UI.InkSoft);
         repeatPanel.SetActive(false);
 
         summaryPanel = Panel("CanvasSessionSummary", "Resumen de sesión", "Datos registrados localmente");
-        summaryText = Label("Reporte", summaryPanel.transform, "", 19, new Vector2(0,30), new Vector2(780,300));
+        GameObject reportBox = Box("ReporteFondo", summaryPanel.transform, new Vector2(0,30), new Vector2(840,230), UI.PaperLight);
+        GameObject reportBorder = UI.Node(reportBox.transform, "Borde");
+        UI.Stretch(reportBorder);
+        UI.AddImage(reportBorder, UI.Frame, UI.WithAlpha(UI.Ink, .2f)).fillCenter = false;
+        summaryText = Label("Reporte", summaryPanel.transform, "", 19, new Vector2(0,30), new Vector2(800,210), UI.Face.Type);
+        summaryText.alignment = TextAlignmentOptions.TopLeft;
+        summaryText.overflowMode = TextOverflowModes.Ellipsis;
         // Estado del envío al backend (BPMN «¿Almacena datos?» y secuencia «Retroalimentación guardada»).
-        syncText = Label("EnvioServidor", summaryPanel.transform, "", 17, new Vector2(0,-140), new Vector2(780,36));
-        Button("Finalizar", summaryPanel.transform, "Finalizar", new Vector2(-205,-190), new Vector2(360,62), EndAndMenu);
-        Button("Menu", summaryPanel.transform, "Volver al menú principal", new Vector2(205,-190), new Vector2(360,62), EndAndMenu);
+        syncText = Label("EnvioServidor", summaryPanel.transform, "", 20, new Vector2(0,-118), new Vector2(820,52), UI.Face.Type, UI.SageDeep);
+        Button("Finalizar", summaryPanel.transform, "Finalizar", new Vector2(-210,-210), new Vector2(400,68), EndAndMenu);
+        Button("Menu", summaryPanel.transform, "Volver al menú principal", new Vector2(210,-210), new Vector2(400,68), EndAndMenu, UI.ButtonKind.Primary);
         summaryPanel.SetActive(false);
     }
 
+    // Hoja de papel (estética de la maqueta aprobada) centrada en el lienzo de 1000×650.
     private GameObject Panel(string name, string title, string description)
     {
-        GameObject panel = Box(name, transform, Vector2.zero, new Vector2(860,560), new Color(.025f,.04f,.07f,.98f));
-        Label("Titulo", panel.transform, title, 36, new Vector2(0,220), new Vector2(780,65));
-        Label("Descripcion", panel.transform, description, 21, new Vector2(0,155), new Vector2(780,90));
+        GameObject panel = new GameObject(name, typeof(RectTransform));
+        panel.transform.SetParent(transform, false);
+        UI.Stretch(panel);
+        UI.Sheet(panel.transform, "Hoja", 20f, 15f, 960f, 620f);
+        Label("Titulo", panel.transform, title, 46, new Vector2(0,235), new Vector2(820,64), UI.Face.Display);
+        Label("Descripcion", panel.transform, description, 23, new Vector2(0,163), new Vector2(820,84), UI.Face.Body, UI.InkSoft);
         return panel;
     }
 
     private static GameObject Box(string name, Transform parent, Vector2 position, Vector2 size, Color color)
     {
-        GameObject box = new GameObject(name, typeof(RectTransform), typeof(Image));
+        GameObject box = new GameObject(name, typeof(RectTransform));
         box.transform.SetParent(parent, false);
         RectTransform rect = box.GetComponent<RectTransform>();
         rect.anchoredPosition = position;
         rect.sizeDelta = size;
-        box.GetComponent<Image>().color = color;
+        UI.AddImage(box, UI.Solid, color);
         return box;
     }
 
-    private static TMP_Text Label(string name, Transform parent, string value, float size, Vector2 position, Vector2 dimensions)
+    private static TMP_Text Label(string name, Transform parent, string value, float size, Vector2 position, Vector2 dimensions,
+        UI.Face face = UI.Face.Body, Color? color = null)
     {
         GameObject go = new GameObject(name, typeof(RectTransform));
         go.transform.SetParent(parent, false);
         RectTransform rect = go.GetComponent<RectTransform>();
         rect.anchoredPosition = position;
         rect.sizeDelta = dimensions;
-        TextMeshProUGUI text = go.AddComponent<TextMeshProUGUI>();
-        text.text = value;
-        text.fontSize = size;
-        text.color = Color.white;
-        text.alignment = TextAlignmentOptions.Center;
-        text.textWrappingMode = TextWrappingModes.Normal;
-        text.raycastTarget = false;
-        return text;
+        return UI.AddText(go, value, face, size, color ?? UI.Ink, TextAlignmentOptions.Center);
     }
 
-    private static Button Button(string name, Transform parent, string label, Vector2 position, Vector2 size, UnityEngine.Events.UnityAction action)
+    private static Button Button(string name, Transform parent, string label, Vector2 position, Vector2 size,
+        UnityEngine.Events.UnityAction action, UI.ButtonKind kind = UI.ButtonKind.Secondary)
     {
-        GameObject go = Box(name, parent, position, size, new Color(.08f,.45f,.47f,1f));
-        Button button = go.AddComponent<Button>();
-        button.targetGraphic = go.GetComponent<Image>();
-        button.onClick.AddListener(action);
-        Label("Texto", go.transform, label, 22, Vector2.zero, size);
+        UI.Button(parent, name, label, kind, 24f, action, out Button button);
+        RectTransform rect = button.GetComponent<RectTransform>();
+        rect.anchoredPosition = position;
+        rect.sizeDelta = size;
         return button;
+    }
+
+    // Color de la línea de envío: ámbar si falló, tinta suave si está pendiente o sin vincular, salvia si se guardó.
+    private static Color SyncColor(FastAPIClient api)
+    {
+        if (api == null) return UI.InkSoft;
+        if (api.StorageFailed) return UI.AmberInk;
+        if (!api.IsPaired || api.PendingCount > 0) return UI.InkSoft;
+        return UI.SageDeep;
+    }
+
+    // Presenta las métricas del nivel en dos columnas (mismos datos que MetricsText; solo cambia la disposición).
+    private static string MetricsColumns(string metrics)
+    {
+        string[] lines = metrics.Split('\n');
+        string[] items = lines[0].Split(new[] { " | " }, System.StringSplitOptions.None);
+        StringBuilder text = new StringBuilder();
+        for (int i = 0; i < items.Length; i += 2)
+        {
+            text.Append(Capitalize(items[i]));
+            if (i + 1 < items.Length) text.Append("<pos=52%>").Append(Capitalize(items[i + 1]));
+            text.Append('\n');
+        }
+        string soft = ColorUtility.ToHtmlStringRGB(UI.InkSoft);
+        for (int i = 1; i < lines.Length; i++) text.Append("<color=#").Append(soft).Append('>').Append(lines[i]).Append("</color>\n");
+        return text.ToString().TrimEnd('\n');
+    }
+
+    private static string Capitalize(string value)
+    {
+        return string.IsNullOrEmpty(value) ? value : char.ToUpperInvariant(value[0]) + value.Substring(1);
     }
 
     private static void EnsureEventSystem()
