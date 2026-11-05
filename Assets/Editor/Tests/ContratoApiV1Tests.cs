@@ -70,6 +70,32 @@ public class ContratoApiV1Tests
     }
 
     [Test]
+    public void LevelRecord_EnviaSudsEventosMuestrasYAngulo()
+    {
+        var metrics = new LevelMetrics
+        {
+            level = 1, levelPassed = true, proximityMin = 1.85f, sessionDuration = 270f, gazeMeanAngleDeg = 21.3f, sampleHz = 2f,
+            distanceSamples = new List<float> { 3.1f, 3.0f }, angleSamples = new List<float> { 12f, 8.5f },
+            events = new List<LevelEvent> { new LevelEvent { t = 33.2f, type = "avoidance", value = 0.9f }, new LevelEvent { t = 40f, type = "otro" } },
+            suds = new List<SudsEntry> { new SudsEntry { phase = "before", value = 60 }, new SudsEntry { phase = "after", value = 40, at = 270f }, new SudsEntry { phase = "after", value = 150 } }
+        };
+        string json = DeviceRecordMapper.LevelRecord("r6", "s1", metrics, 1, Now);
+        StringAssert.Contains("\"suds\":[{\"phase\":\"before\",\"value\":60,\"at\":0.0},{\"phase\":\"after\",\"value\":40,\"at\":270.0}]", json);
+        StringAssert.Contains("\"type\":\"avoidance\",\"data\":{\"retreatSpeed\":0.9}", json);
+        StringAssert.Contains("\"samples\":{\"hz\":2.0,\"distanceM\":[3.1,3.0],\"angleDeg\":[12.0,8.5]}", json);
+        StringAssert.Contains("\"meanAngleDeg\":21.3", json);
+        Assert.IsFalse(json.Contains("\"otro\""), "Los eventos no admitidos por el contrato no se envían.");
+    }
+
+    [Test]
+    public void Recomendacion_TextoParaElPaciente()
+    {
+        var context = new DeviceContextDto { recommendation = new RecommendationDto { value = "repeat", clinicalStatus = "pendiente_de_validar" } };
+        Assert.AreEqual("Sugerencia tras tu última sesión: repetir el mismo nivel. Pendiente de revisión por tu profesional.", context.RecommendationText());
+        Assert.AreEqual("", new DeviceContextDto().RecommendationText());
+    }
+
+    [Test]
     public void SessionEnd_MotivoYNivelAlcanzado()
     {
         var report = new SessionReport();

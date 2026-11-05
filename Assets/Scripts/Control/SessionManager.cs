@@ -14,6 +14,10 @@ public class SessionManager : MonoBehaviour
     private readonly System.Collections.Generic.Dictionary<int, int> levelRetries = new System.Collections.Generic.Dictionary<int, int>();
     // Métricas ya registradas del intento en curso de cada nivel (evita registrar dos veces el mismo intento).
     private readonly System.Collections.Generic.Dictionary<int, LevelMetrics> currentAttemptMetrics = new System.Collections.Generic.Dictionary<int, LevelMetrics>();
+    // SUDS «antes» del intento en curso de cada nivel (se adjunta al registrar sus métricas).
+    private readonly System.Collections.Generic.Dictionary<int, SudsEntry> beforeSuds = new System.Collections.Generic.Dictionary<int, SudsEntry>();
+    // Último intento registrado y aún sin enviar: espera al SUDS «después» (o a que se salte) para salir completo.
+    private LevelMetrics pendingPost;
     private float sessionStartTime;
     private bool ended;
     private FastAPIClient apiClient;
@@ -29,6 +33,8 @@ public class SessionManager : MonoBehaviour
         Instance = this;
         DontDestroyOnLoad(gameObject);
         apiClient = GetComponent<FastAPIClient>();
+        // Red de seguridad: al cambiar de escena nada queda sin enviar.
+        UnityEngine.SceneManagement.SceneManager.sceneLoaded += (_, __) => PostPendingLevel();
     }
 
     /// <param name="testSession">true si se abrió desde el selector de nivel (solo builds de desarrollo); el reporte lo marca para excluirlo del análisis.</param>
@@ -40,6 +46,8 @@ public class SessionManager : MonoBehaviour
         CurrentLevel = 1;
         levelRetries.Clear();
         currentAttemptMetrics.Clear();
+        beforeSuds.Clear();
+        pendingPost = null;
         sessionStartTime = Time.realtimeSinceStartup;
         ended = false;
 
@@ -60,7 +68,9 @@ public class SessionManager : MonoBehaviour
     {
         levelRetries.TryGetValue(level, out int current);
         levelRetries[level] = current + 1;
+        PostPendingLevel();
         currentAttemptMetrics.Remove(level);
+        beforeSuds.Remove(level);
     }
 
     public int LevelRetries(int level)
@@ -87,8 +97,42 @@ public class SessionManager : MonoBehaviour
         if (report == null || ended || metrics == null) return;
         if (currentAttemptMetrics.ContainsKey(metrics.level)) return;
         currentAttemptMetrics[metrics.level] = metrics;
+        if (metrics.suds == null) metrics.suds = new System.Collections.Generic.List<SudsEntry>();
+        if (beforeSuds.TryGetValue(metrics.level, out SudsEntry before) && !metrics.suds.Exists(s => s.phase == "before")) metrics.suds.Insert(0, before);
         report.levelMetrics.Add(metrics);
 
+        PostPendingLevel();
+        pendingPost = metrics;
+    }
+
+    /// <summary>SUDS «antes» del intento en curso (0–100). Se ignora si el valor no es válido.</summary>
+    public void RecordSudsBefore(int level, int value)
+    {
+        if (report == null || ended || value < 0 || value > 100) return;
+        beforeSuds[level] = new SudsEntry { phase = "before", value = value, at = 0f };
+    }
+
+    /// <summary>true si el último intento registrado de ese nivel aún espera el SUDS «después».</summary>
+    public bool AwaitingSudsAfter(int level)
+    {
+        return pendingPost != null && pendingPost.level == level && !pendingPost.suds.Exists(s => s.phase == "after");
+    }
+
+    /// <summary>SUDS «después» (0–100) del último intento; value &lt; 0 = prefirió no responder. En ambos casos el registro se envía.</summary>
+    public void RecordSudsAfter(int level, int value)
+    {
+        if (pendingPost == null || pendingPost.level != level) return;
+        if (value >= 0 && value <= 100 && !pendingPost.suds.Exists(s => s.phase == "after"))
+            pendingPost.suds.Add(new SudsEntry { phase = "after", value = value, at = Mathf.Max(0f, pendingPost.sessionDuration) });
+        PostPendingLevel();
+    }
+
+    /// <summary>Envía (a la bandeja) el intento que esperaba el SUDS «después».</summary>
+    public void PostPendingLevel()
+    {
+        if (pendingPost == null) return;
+        LevelMetrics metrics = pendingPost;
+        pendingPost = null;
         if (apiClient != null) StartCoroutine(apiClient.PostLevelMetrics(SessionId, metrics.level, metrics));
     }
 
@@ -97,6 +141,7 @@ public class SessionManager : MonoBehaviour
     {
         if (report == null || ended) return;
 
+        PostPendingLevel();
         report.totalDuration = Time.realtimeSinceStartup - sessionStartTime;
         report.timestamp = DateTime.UtcNow.ToString("o");
         ended = true;

@@ -32,6 +32,8 @@ public static class DeviceRecordMapper
     public const string EndAppClosed = "app_closed";
 
     private static readonly HashSet<string> Outcomes = new HashSet<string> { OutcomeCompleted, OutcomeCriterionNotMet, OutcomeSafeExit, OutcomeAbandoned };
+    // Eventos de LevelMetrics que se envían (level_start, level_end, safe_exit y suds los añade el mapeo).
+    private static readonly HashSet<string> RecordedEvents = new HashSet<string> { "avoidance", "pause", "resume" };
     private static readonly HashSet<string> EndReasons = new HashSet<string> { EndCompleted, EndUserFinished, EndSafeExit, EndAppClosed };
 
     public static string NewId() { return Guid.NewGuid().ToString(); }
@@ -73,18 +75,53 @@ public static class DeviceRecordMapper
         json.Key("gaze").BeginObject()
             .Prop("coneDeg", GazeConeDeg)
             .Prop("onStimulusSeconds", Math.Max(0.0, Finite(metrics.gazeTimeOnSpider)))
-            .Prop("meanAngleDeg", (double?)null)
+            .Prop("meanAngleDeg", metrics.gazeMeanAngleDeg >= 0f ? (double?)Math.Min(180.0, metrics.gazeMeanAngleDeg) : null)
             .EndObject();
 
         json.Prop("avoidanceCount", Math.Max(0, metrics.avoidanceAttempts));
-        // SUDS todavía no se pregunta en la app: se envía la lista vacía (campo opcional del contrato).
-        json.Key("suds").BeginArray().EndArray();
+
+        // SUDS antes y después (0–100). La fase «durante» no se pregunta (su frecuencia está pendiente de validar).
+        json.Key("suds").BeginArray();
+        if (metrics.suds != null)
+            foreach (SudsEntry entry in metrics.suds)
+            {
+                if (entry == null || entry.value < 0 || entry.value > 100) continue;
+                if (entry.phase != "before" && entry.phase != "during" && entry.phase != "after") continue;
+                json.BeginObject().Prop("phase", entry.phase).Prop("value", entry.value).Prop("at", Math.Max(0.0, Finite(entry.at))).EndObject();
+            }
+        json.EndArray();
 
         json.Key("events").BeginArray();
         json.BeginObject().Prop("t", 0.0).Prop("type", "level_start").EndObject();
+        if (metrics.events != null)
+            foreach (LevelEvent item in metrics.events)
+            {
+                if (item == null || !RecordedEvents.Contains(item.type)) continue;
+                json.BeginObject().Prop("t", Math.Max(0.0, Finite(item.t))).Prop("type", item.type);
+                if (item.type == "avoidance") json.Key("data").BeginObject().Prop("retreatSpeed", Finite(item.value)).EndObject();
+                json.EndObject();
+            }
+        if (metrics.suds != null)
+            foreach (SudsEntry entry in metrics.suds)
+                if (entry != null && entry.value >= 0 && entry.value <= 100)
+                    json.BeginObject().Prop("t", Math.Max(0.0, Finite(entry.at))).Prop("type", "suds")
+                        .Key("data").BeginObject().Prop("phase", entry.phase).Prop("value", entry.value).EndObject().EndObject();
         if (outcome == OutcomeSafeExit) json.BeginObject().Prop("t", permanence).Prop("type", "safe_exit").EndObject();
         json.BeginObject().Prop("t", permanence).Prop("type", "level_end").EndObject();
         json.EndArray();
+
+        // Muestras periódicas de distancia y ángulo a la araña más cercana.
+        if (metrics.sampleHz > 0f && metrics.distanceSamples != null && metrics.distanceSamples.Count > 0)
+        {
+            json.Key("samples").BeginObject().Prop("hz", (double)metrics.sampleHz);
+            json.Key("distanceM").BeginArray();
+            foreach (float value in metrics.distanceSamples) json.Value(Math.Round(Finite(value), 3));
+            json.EndArray();
+            json.Key("angleDeg").BeginArray();
+            if (metrics.angleSamples != null) foreach (float value in metrics.angleSamples) json.Value(Math.Round(Finite(value), 1));
+            json.EndArray();
+            json.EndObject();
+        }
 
         // Métricas que ya mide el proyecto (LevelMetrics) y no tienen campo propio en el contrato.
         json.Key("extra").BeginObject()

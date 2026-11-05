@@ -65,8 +65,11 @@ Correspondencia LevelMetrics -> level_record (payload)
 - levelPassed -> criterionMet; outcome (nuevo campo de LevelMetrics) -> outcome: completed, criterion_not_met, safe_exit (salida de emergencia) o abandoned (volver al menú desde la pausa). Vacío = completed si levelPassed, si no criterion_not_met.
 - sessionDuration -> permanenceSeconds; endedAt = momento del registro, startedAt = endedAt - permanenceSeconds.
 - proximityMin -> minDistanceM (`null` cuando vale -1, sin estímulo muestreado).
-- gazeTimeOnSpider -> gaze.onStimulusSeconds; gaze.coneDeg = 1 (rayo central de MetricsCollector, no es un cono); gaze.meanAngleDeg = null (no se mide).
-- avoidanceAttempts -> avoidanceCount. suds = [] (la app todavía no pregunta SUDS). events = level_start, safe_exit si aplica, level_end.
+- gazeTimeOnSpider -> gaze.onStimulusSeconds; gaze.coneDeg = 1 (rayo central de MetricsCollector, no es un cono); gazeMeanAngleDeg -> gaze.meanAngleDeg (ángulo medio cabeza-araña más cercana; null si no hubo araña muestreada).
+- avoidanceAttempts -> avoidanceCount.
+- suds -> suds: SUDS 0–100 «before» (al entrar al nivel, at = 0) y «after» (al terminar o al ofrecer repetir, at = permanenceSeconds). «Prefiero no responder» no añade entrada. La fase «during» no se pregunta. Cada respuesta también va como evento `suds`.
+- events: level_start, avoidance (con data.retreatSpeed), pause, resume, suds, safe_exit si aplica, level_end. `t` = segundos de exposición sin contar pausas (por eso pause y resume comparten t).
+- distanceSamples / angleSamples / sampleHz -> samples { hz: 2, distanceM, angleDeg } (araña más cercana, cada 0,5 s de exposición; máximo 3600 muestras).
 - extra: taskCompletions, breathingActivations, headMovementMean (= headMovementFrequency), handContactSeconds, handWithdrawals, levelAttempts.
 - session_end: endReason completed (Nivel5 superado), user_finished, safe_exit (salida de emergencia) o app_closed (OnApplicationQuit); levelReached = nivel más alto registrado; totalDurationSeconds = totalDuration.
 
@@ -134,3 +137,10 @@ Registro de cambios (rama feature/unity-contrato-v1.1, 2026-11-05)
 - AdaptiveCommandPoller: retirado (inerte).
 - Pruebas EditMode: `Assets/Editor/Tests/ContratoApiV1Tests.cs`.
 Verificación: los scripts modificados compilan con el Roslyn de Unity 6000.3.25f1 (UGUI/TMP del paquete incluido; XRI e Input System con stubs de tipos). Los sobres generados por el código C# real pasan la validación de `RecordEnvelope` y de cada payload del backend, y un flujo completo contra NP_Back con PostgreSQL efímero devolvió `feedback.status = saved`, reintento `duplicate` y 401 tras cerrar la sesión del visor. Pendiente: abrir el proyecto en Unity (pruebas EditMode y Play Mode) y probar en la Quest contra un servidor en la LAN.
+
+Registro de cambios (rama feature/unity-datos-ia, 2026-11-05)
+- SUDS antes y después de cada intento en GlobalSessionUI (panel con 0, 10, …, 100 y «Prefiero no responder»; textos aprobados por Sara). El juego queda en pausa mientras el panel está abierto. No se pregunta tras la salida de emergencia ni al volver al menú desde la pausa.
+- SessionManager retiene el level_record del último intento hasta el SUDS «después» (o hasta saltarlo, cambiar de escena, repetir o cerrar la sesión) para enviarlo completo. TaskManager (Nivel5) ya no cierra la sesión antes de ese SUDS.
+- MetricsCollector: ángulo medio cabeza-araña, muestras de distancia y ángulo a 2 Hz, eventos avoidance/pause/resume.
+- MainMenu: la recomendación de `GET /device/context` se muestra en la evaluación inicial («Sugerencia tras tu última sesión: …», con «Pendiente de revisión por tu profesional» mientras clinicalStatus = pendiente_de_validar).
+Verificación: compilación con el Roslyn de Unity 6000.3.25f1; sobres validados con los modelos del backend; flujo completo contra NP_Back con PostgreSQL efímero (feedback saved); `app.ai.features.level_features` extrae del registro de Unity suds_before = 60 y suds_after = 40. Pendiente: Unity, Play Mode y Quest.

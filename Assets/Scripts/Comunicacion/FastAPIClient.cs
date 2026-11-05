@@ -463,11 +463,15 @@ public class FastAPIClient : MonoBehaviour
     private static readonly System.Text.RegularExpressions.Regex NullNumber =
         new System.Text.RegularExpressions.Regex("\"(phobiaGrade|allowedStartLevel)\"\\s*:\\s*null");
 
+    private static readonly System.Text.RegularExpressions.Regex NullObject =
+        new System.Text.RegularExpressions.Regex("\"(recommendation|lastSession|session|feedback)\"\\s*:\\s*null");
+
     private static T Parse<T>(string body) where T : class
     {
         if (string.IsNullOrWhiteSpace(body)) return null;
         // JsonUtility no admite null en campos numéricos (p. ej. "phobiaGrade": null): se leen como 0.
         body = NullNumber.Replace(body, "\"$1\":0");
+        body = NullObject.Replace(body, "\"$1\":{}");
         try { return JsonUtility.FromJson<T>(body); }
         catch (ArgumentException) { return null; }
     }
@@ -519,4 +523,31 @@ public class DeviceContextDto
     // 0 = sin grado guardado (el backend envía null).
     public int phobiaGrade;
     public string phobiaGradeUpdatedAt;
+    // Recomendación del análisis de la última sesión (vacía si no hay).
+    public RecommendationDto recommendation = new RecommendationDto();
+
+    /// <summary>Texto para el paciente, o vacío si no hay recomendación. Textos aprobados por Sara (2026-11-05).</summary>
+    public string RecommendationText()
+    {
+        if (recommendation == null || string.IsNullOrEmpty(recommendation.value)) return "";
+        string action;
+        switch (recommendation.value)
+        {
+            case "advance": action = "avanzar al siguiente nivel"; break;
+            case "repeat": action = "repetir el mismo nivel"; break;
+            case "step_back": action = "volver al nivel anterior"; break;
+            default: return "";
+        }
+        string text = "Sugerencia tras tu última sesión: " + action + ".";
+        if (recommendation.clinicalStatus == "pendiente_de_validar") text += " Pendiente de revisión por tu profesional.";
+        return text;
+    }
+}
+
+[Serializable]
+public class RecommendationDto
+{
+    public string value;
+    public string method;
+    public string clinicalStatus;
 }

@@ -41,6 +41,7 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
     private string pairingCode = "";
     private bool pairingInProgress;
     private TMP_Text gradeHint;
+    private TMP_Text recommendationHint;
     private TMP_Text deviceStatus;
     private TMP_Text deviceButtonLabel;
     private TMP_InputField nameInput;
@@ -642,6 +643,10 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         gradeHint = UI.AddText(UI.Node(gradeSheet, "UltimoGrado"), "", UI.Face.Type, 22f, UI.InkSoft, TextAlignmentOptions.MidlineLeft);
         UI.Place(gradeHint.gameObject, 60f, 392f, 800f, 34f);
         PaperButton(gradeSheet, "Volver", "Volver", UI.ButtonKind.Secondary, 60f, 444f, 156f, 68f, ShowConsent);
+        // Recomendación del backend (GET /device/context), junto a «Volver».
+        recommendationHint = UI.AddText(UI.Node(gradeSheet, "Recomendacion"), "", UI.Face.Type, 19f, UI.SageDeep, TextAlignmentOptions.MidlineLeft);
+        recommendationHint.textWrappingMode = TextWrappingModes.Normal;
+        UI.Place(recommendationHint.gameObject, 240f, 444f, 620f, 68f);
 
         BuildPairingPanel(parent);
 
@@ -876,6 +881,8 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         FastAPIClient api = Api();
         int last = api != null ? api.LastPhobiaGrade() : 0;
         gradeHint.text = last > 0 ? "Último grado registrado: " + last : "";
+        if (recommendationHint != null)
+            recommendationHint.text = api != null && api.Context != null ? api.Context.RecommendationText() : "";
     }
 
     private void UpdateDeviceStatus()

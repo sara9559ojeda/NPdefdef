@@ -65,7 +65,7 @@ public class TaskManager : MonoBehaviour
         metrics.levelPassed = true;
         if (SessionManager.Instance != null) SessionManager.Instance.AddLevelMetrics(metrics);
         GameStateManager.SetState(GameState.SESSION_END);
-        if (SessionManager.Instance != null) SessionManager.Instance.EndSession();
+        // ShowSessionSummary pregunta el SUDS «después» y luego cierra la sesión (EndSession).
         GlobalSessionUI.ShowSessionSummary();
     }
 }

@@ -74,3 +74,11 @@ Fecha: 2026-11-05. Base: `origin/main` (1d217e3).
 
 - La rama une `feature/unity-nivel5-aranas` (PR #2 con las decisiones de Sara: arañas según el grado de fobia, sin CaveSpiders ocultas, intento fallido registrado al repetir) y `feature/unity-contrato-v1.1`. Conflicto resuelto en `GlobalSessionUI`: la oferta de repetir registra el intento fallido como `criterion_not_met`; la salida de emergencia, `safe_exit`; volver al menú desde la pausa, `abandoned`. Cada intento de un nivel es un `level_record` aparte con su `attempt`.
 - **Nivel4:** la araña `NP_Spider_Level4` usa `NPNaturalSpiderPatrol` con el mismo modelo que Nivel3 y Nivel5 (`Wolf_spider.fbx`, `Visual_WolfSpider`, hijo directo y con rotación 0 en la escena). Antes del PR #2 avanzaba con la cabeza hacia atrás; el giro de 180° por defecto (`visualYawOffset`) y la corrección de rumbo del clip la dejan mirando hacia el avance, igual que en Nivel5. `blockOnObstacles` sigue apagado en Nivel4 y el apoyo en el suelo no cambia para colliders sólidos. La araña del terrario (`Level4SpiderHandCrawl`/`AranaController`) es otro objeto y no usa este componente. No hizo falta cambiar código. Prueba nueva: `Assets/Tests/PlayMode/Nivel4PlayModeTests.cs` (cabeza alineada con el avance, tolerancia 20°), pendiente de ejecutar en Unity.
+
+## Datos ampliados para el análisis (rama `feature/unity-datos-ia`, 2026-11-05)
+
+Base: `feature/rediseno-menus-corcho`. Sara aprobó los textos nuevos.
+- **SUDS:** antes y después de cada intento, en el estilo del rediseño (0 a 100 de 10 en 10 y «Prefiero no responder»). El análisis del backend usa la bajada de ansiedad y la ansiedad final; hasta ahora no recibía ninguna de las dos.
+- **Por nivel:** ángulo medio de la cabeza respecto a la araña, muestras de distancia y ángulo a 2 Hz y eventos con tiempo (alejamientos con su velocidad, pausas, reanudaciones, respuestas SUDS).
+- **Menú:** muestra la sugerencia del análisis de la última sesión, marcada como pendiente de revisión por el profesional.
+- **Verificación:** compilación, validación de los sobres con los modelos del backend y flujo completo contra NP_Back (retroalimentación guardada; la IA lee SUDS 60 → 40). Pruebas EditMode ampliadas, sin ejecutar en Unity.

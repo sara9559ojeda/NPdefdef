@@ -33,6 +33,11 @@ public sealed class GlobalSessionUI : MonoBehaviour
     private float sceneStart;
     private bool completed;
     private string exitOutcome;
+    // SUDS (ansiedad 0–100) antes y después de cada intento. Mientras el panel está abierto el juego queda en pausa.
+    private GameObject sudsPanel;
+    private TMP_Text sudsTitle;
+    private System.Action<int> sudsAnswer;
+    private bool sudsBeforeAsked;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void Initialize()
@@ -62,6 +67,51 @@ public sealed class GlobalSessionUI : MonoBehaviour
         EnsureEventSystem();
         BuildCanvas();
         CreateInputActions();
+        AskSudsBefore();
+    }
+
+    private void AskSudsBefore()
+    {
+        if (sudsBeforeAsked || SessionManager.Instance == null || SessionManager.Instance.GetReport() == null) return;
+        sudsBeforeAsked = true;
+        ShowSuds("Antes de empezar", value =>
+        {
+            if (value >= 0) SessionManager.Instance.RecordSudsBefore(level, value);
+            HidePanels();
+            Time.timeScale = 1f;
+            GameStateManager.SetState(GameState.PLAYING);
+        });
+    }
+
+    /// <param name="onAnswer">Recibe 0–100, o -1 si la persona prefiere no responder.</param>
+    private void ShowSuds(string title, System.Action<int> onAnswer)
+    {
+        HidePanels();
+        sudsTitle.text = title;
+        sudsAnswer = onAnswer;
+        if (!completed) GameStateManager.SetState(GameState.PAUSED);
+        Time.timeScale = 0f;
+        DisableOtherRaycasters();
+        sudsPanel.SetActive(true);
+    }
+
+    private void AnswerSuds(int value)
+    {
+        System.Action<int> answer = sudsAnswer;
+        sudsAnswer = null;
+        sudsPanel.SetActive(false);
+        answer?.Invoke(value);
+    }
+
+    // Tras registrar el intento: pregunta el SUDS «después» si aún falta y luego continúa.
+    private void AfterSudsThen(System.Action next)
+    {
+        if (SessionManager.Instance == null || !SessionManager.Instance.AwaitingSudsAfter(level)) { next(); return; }
+        ShowSuds("Al terminar", value =>
+        {
+            SessionManager.Instance.RecordSudsAfter(level, value);
+            next();
+        });
     }
 
     private void Update()
@@ -80,6 +130,14 @@ public sealed class GlobalSessionUI : MonoBehaviour
 #if ENABLE_INPUT_SYSTEM
         escapePressed |= Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame;
 #endif
+        if (sudsPanel != null && sudsPanel.activeSelf)
+        {
+            // Algunos niveles ponen el estado en PLAYING en su Start: el panel SUDS mantiene la pausa.
+            Time.timeScale = 0f;
+            if (!completed && GameStateManager.CurrentState == GameState.PLAYING) GameStateManager.SetState(GameState.PAUSED);
+            return;
+        }
+
         if (escapePressed || (pauseAction != null && pauseAction.WasPressedThisFrame()))
         {
             if (confirmPanel.activeSelf) ShowPause();
@@ -155,6 +213,12 @@ public sealed class GlobalSessionUI : MonoBehaviour
         LevelMetrics metrics = Capture(true);
         GameStateManager.SetState(GameState.LEVEL_COMPLETE);
         Time.timeScale = 0f;
+        AfterSudsThen(() => ShowResultPanel(metrics));
+    }
+
+    private void ShowResultPanel(LevelMetrics metrics)
+    {
+        HidePanels();
         resultText.text = MetricsColumns(MetricsText(metrics));
         nextButton.interactable = NextLevelOf(level) > 0;
         pauseButton.gameObject.SetActive(false);
@@ -179,6 +243,11 @@ public sealed class GlobalSessionUI : MonoBehaviour
         Capture(false);
         GameStateManager.SetState(GameState.LEVEL_COMPLETE);
         Time.timeScale = 0f;
+        AfterSudsThen(() => ShowRepeatPanel(message));
+    }
+
+    private void ShowRepeatPanel(string message)
+    {
         HidePanels();
         repeatText.text = message;
         pauseButton.gameObject.SetActive(false);
@@ -281,6 +350,20 @@ public sealed class GlobalSessionUI : MonoBehaviour
         Button("Finalizar", summaryPanel.transform, "Finalizar", new Vector2(-210,-210), new Vector2(400,68), EndAndMenu);
         Button("Menu", summaryPanel.transform, "Volver al menú principal", new Vector2(210,-210), new Vector2(400,68), EndAndMenu, UI.ButtonKind.Primary);
         summaryPanel.SetActive(false);
+
+        // SUDS (Wolpe, 1969): 0 = nada de ansiedad, 100 = la máxima que puedas imaginar. Textos aprobados por Sara (2026-11-05).
+        sudsPanel = Panel("CanvasSuds", "Antes de empezar", "¿Cuánta ansiedad sientes en este momento?\n0 = nada de ansiedad · 100 = la máxima ansiedad que puedas imaginar");
+        sudsTitle = sudsPanel.transform.Find("Titulo").GetComponent<TMP_Text>();
+        for (int i = 0; i <= 10; i++)
+        {
+            int value = i * 10;
+            Button("Suds" + value, sudsPanel.transform, value.ToString(), new Vector2(-400 + i * 80, 10), new Vector2(72,72), () => AnswerSuds(value),
+                i == 0 || i == 10 ? UI.ButtonKind.Primary : UI.ButtonKind.Key);
+        }
+        Label("Extremos", sudsPanel.transform, "Nada                                                                                          Máxima", 18, new Vector2(0,-48), new Vector2(880,30), UI.Face.Type, UI.InkSoft);
+        Button("NoResponder", sudsPanel.transform, "Prefiero no responder", new Vector2(0,-160), new Vector2(480,68), () => AnswerSuds(-1));
+        Label("Ayuda", sudsPanel.transform, "Apunta con el mando y pulsa el número que mejor te describa.", 18, new Vector2(0,-245), new Vector2(820,30), UI.Face.Type, UI.InkSoft);
+        sudsPanel.SetActive(false);
     }
 
     // Hoja de papel (estética de la maqueta aprobada) centrada en el lienzo de 1000×650.
@@ -372,7 +455,7 @@ public sealed class GlobalSessionUI : MonoBehaviour
 
     private void ShowPause()
     {
-        if (completed) return;
+        if (completed || (sudsPanel != null && sudsPanel.activeSelf)) return;
         HidePanels();
         GameStateManager.SetState(GameState.PAUSED);
         Time.timeScale = 0f;
@@ -386,6 +469,7 @@ public sealed class GlobalSessionUI : MonoBehaviour
         pausePanel.SetActive(false);
         confirmPanel.SetActive(false);
         optionsPanel.SetActive(false);
+        if (sudsPanel != null) sudsPanel.SetActive(false);
     }
 
     private void Resume()
@@ -454,6 +538,14 @@ public sealed class GlobalSessionUI : MonoBehaviour
             EnsureEventSystem();
             current.BuildCanvas();
         }
+        current.completed = true;
+        // Nivel5 llega aquí al terminar: antes de cerrar la sesión se pregunta el SUDS «después».
+        current.AfterSudsThen(current.FinishSummary);
+    }
+
+    private void FinishSummary()
+    {
+        GlobalSessionUI current = this;
         if (SessionManager.Instance != null) SessionManager.Instance.EndSession();
         GameStateManager.SetState(GameState.SESSION_END);
         Time.timeScale = 0f;
