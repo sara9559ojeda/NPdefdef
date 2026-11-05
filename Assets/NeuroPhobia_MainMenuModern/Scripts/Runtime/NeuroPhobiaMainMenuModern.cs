@@ -6,6 +6,7 @@ using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using UnityEngine.XR;
 using UnityEngine.XR.Interaction.Toolkit.UI;
+using UI = NeuroPhobiaUITheme;
 
 /// <summary>
 /// Menú principal moderno de NeuroPhobia.
@@ -30,6 +31,19 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
     private GameObject consentPanel;
     private GameObject gradePanel;
     private GameObject profilePanel;
+    // Vinculación del visor (contrato API v1, 6.1): es el «Inicio de sesión» del paciente en el BPMN.
+    private const string PairingAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    private GameObject pairingPanel;
+    private TMP_Text[] pairingSlots;
+    private Image[] pairingSlotBoxes;
+    private Image[] pairingSlotLines;
+    private TMP_Text pairingStatus;
+    private string pairingCode = "";
+    private bool pairingInProgress;
+    private TMP_Text gradeHint;
+    private TMP_Text recommendationHint;
+    private TMP_Text deviceStatus;
+    private TMP_Text deviceButtonLabel;
     private TMP_InputField nameInput;
     private TMP_InputField emailInput;
     private TMP_Text profileStatus;
@@ -44,27 +58,15 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
     // Solo en Editor y builds de desarrollo; en la build de entrega se empieza siempre por el nivel inicial (RQF009).
     private static bool LevelSelectorEnabled => Application.isEditor || Debug.isDebugBuild;
 
-    private static readonly Color Background =
-        new Color(0.025f, 0.035f, 0.055f, 1f);
-
-    private static readonly Color Panel =
-        new Color(0.055f, 0.075f, 0.105f, 0.96f);
-
-    private static readonly Color PanelSoft =
-        new Color(0.075f, 0.10f, 0.135f, 0.96f);
-
-    private static readonly Color Accent =
-        new Color(0.11f, 0.78f, 0.72f, 1f);
-
-    private static readonly Color AccentBlue =
-        new Color(0.18f, 0.48f, 0.95f, 1f);
-
-    private static readonly Color Muted =
-        new Color(0.68f, 0.75f, 0.82f, 1f);
+    // Color de fondo de la cámara en VR (el mismo tono noche del tablero).
+    private static readonly Color Background = UI.Night;
 
     private void Start()
     {
         RebuildMenu();
+        // Contexto del backend en el Refugio (nunca durante la exposición): grado previo y nivel permitido.
+        FastAPIClient api = Api();
+        if (api != null && api.IsPaired) api.StartCoroutine(api.RefreshContext(_ => UpdateGradeHint()));
     }
 
     public void RebuildMenu()
@@ -182,62 +184,20 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
             Quaternion.Slerp(vrCanvasTransform.rotation, targetRot, t));
     }
 
+    // ───────────── Estética «tablero de corcho» (maqueta aprobada 2026-11-05) ─────────────
+    // Coordenadas en píxeles del lienzo 1440×900 desde la esquina superior izquierda (UI.Place).
+
     private void BuildBackground(Transform parent)
     {
         GameObject bg = CreateUIObject(parent, "Fondo");
         Stretch(bg.GetComponent<RectTransform>());
+        Image image = UI.AddImage(bg, UI.CorkBackground, Color.white);
+        image.preserveAspect = false;
 
-        Image image = bg.AddComponent<Image>();
-        image.color = Background;
-
-        CreateDecorativeBlock(
-            bg.transform,
-            "GlowSuperior",
-            new Vector2(0.00f, 0.77f),
-            new Vector2(0.48f, 1.00f),
-            new Color(0.06f, 0.35f, 0.42f, 0.22f));
-
-        CreateDecorativeBlock(
-            bg.transform,
-            "GlowDerecho",
-            new Vector2(0.72f, 0.00f),
-            new Vector2(1.00f, 0.52f),
-            new Color(0.20f, 0.20f, 0.55f, 0.18f));
-
-        CreateDecorativeBlock(
-            bg.transform,
-            "LineaSuperior",
-            new Vector2(0.00f, 0.985f),
-            new Vector2(1.00f, 1.00f),
-            Accent);
-
-        TMP_Text smallBrand = CreateText(
-            bg.transform,
-            "MarcaSuperior",
-            "NEUROPHOBIA · EXPERIENCIA TERAPÉUTICA INMERSIVA",
-            17f,
-            FontStyles.Bold,
-            TextAlignmentOptions.Left,
-            Muted);
-
-        SetAnchors(
-            smallBrand.rectTransform,
-            new Vector2(0.055f, 0.91f),
-            new Vector2(0.70f, 0.965f));
-
-        TMP_Text footer = CreateText(
-            bg.transform,
-            "Pie",
-            "5 niveles de exposición gradual   •   Computador y Realidad Virtual",
-            16f,
-            FontStyles.Normal,
-            TextAlignmentOptions.Left,
-            new Color(0.52f, 0.60f, 0.69f, 1f));
-
-        SetAnchors(
-            footer.rectTransform,
-            new Vector2(0.055f, 0.025f),
-            new Vector2(0.75f, 0.075f));
+        // Filo vertical rugoso que enmarca la columna del menú.
+        GameObject edge = UI.Node(bg.transform, "Filo");
+        UI.Place(edge, 84f, 40f, 10f, 820f);
+        UI.AddImage(edge, UI.RoughLine, UI.WithAlpha(UI.Cream, .75f));
     }
 
     private void BuildMainPanel(Transform parent)
@@ -245,578 +205,237 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         mainPanel = CreateUIObject(parent, "PanelPrincipal");
         Stretch(mainPanel.GetComponent<RectTransform>());
 
-        GameObject left = CreateUIObject(mainPanel.transform, "Presentacion");
-        RectTransform leftRect = left.GetComponent<RectTransform>();
-        SetAnchors(
-            leftRect,
-            new Vector2(0.055f, 0.13f),
-            new Vector2(0.59f, 0.86f));
+        TMP_Text tag = UI.AddText(UI.Node(mainPanel.transform, "MarcaSuperior"), "EXPERIENCIA TERAPÉUTICA INMERSIVA",
+            UI.Face.Type, 18f, UI.Sepia, TextAlignmentOptions.MidlineLeft);
+        tag.characterSpacing = 16f;
+        UI.Place(tag.gameObject, 120f, 84f, 620f, 30f);
 
-        TMP_Text title = CreateText(
-            left.transform,
-            "Titulo",
-            "NEURO\nPHOBIA",
-            78f,
-            FontStyles.Bold,
-            TextAlignmentOptions.Left,
-            Color.white);
+        TMP_Text footer = UI.AddText(UI.Node(mainPanel.transform, "Pie"), "5 niveles de exposición gradual  ·  Computador y Realidad Virtual",
+            UI.Face.Type, 17f, UI.Sepia, TextAlignmentOptions.MidlineRight);
+        footer.characterSpacing = 6f;
+        UI.Place(footer.gameObject, 700f, 40f, 670f, 30f);
 
-        SetAnchors(
-            title.rectTransform,
-            new Vector2(0.00f, 0.55f),
-            new Vector2(0.90f, 0.93f));
+        // Título sobre una franja de papel rasgado.
+        GameObject strip = UI.Node(mainPanel.transform, "FranjaTitulo");
+        UI.Place(strip, 102f, 130f, 634f, 108f);
+        UI.AddImage(strip, UI.TornStrip, UI.Paper);
+        TMP_Text title = UI.AddText(UI.Node(strip.transform, "Titulo"),
+            "Neuro<color=#" + ColorUtility.ToHtmlStringRGB(UI.SageDeep) + ">Phobia</color>",
+            UI.Face.Display, 84f, UI.Ink, TextAlignmentOptions.MidlineLeft);
+        title.textWrappingMode = TextWrappingModes.NoWrap;
+        UI.Place(title.gameObject, 36f, 4f, 590f, 104f);
 
-        TMP_Text accent = CreateText(
-            left.transform,
-            "Acento",
-            "ENTRENAMIENTO GRADUAL CONTRA LA ARACNOFOBIA",
-            19f,
-            FontStyles.Bold,
-            TextAlignmentOptions.Left,
-            Accent);
+        TMP_Text accent = UI.AddText(UI.Node(mainPanel.transform, "Acento"), "ENTRENAMIENTO GRADUAL CONTRA LA ARACNOFOBIA",
+            UI.Face.Type, 19f, UI.Sage, TextAlignmentOptions.MidlineLeft);
+        accent.characterSpacing = 7f;
+        UI.Place(accent.gameObject, 120f, 258f, 680f, 30f);
 
-        SetAnchors(
-            accent.rectTransform,
-            new Vector2(0.00f, 0.48f),
-            new Vector2(0.94f, 0.57f));
-
-        TMP_Text description = CreateText(
-            left.transform,
-            "Descripcion",
+        TMP_Text description = UI.AddText(UI.Node(mainPanel.transform, "Descripcion"),
             "Avanza a tu ritmo mediante una experiencia progresiva que combina observación, distancia segura, aproximación y contacto virtual controlado.",
-            25f,
-            FontStyles.Normal,
-            TextAlignmentOptions.Left,
-            new Color(0.84f, 0.88f, 0.92f, 1f));
+            UI.Face.Body, 21f, UI.Sepia, TextAlignmentOptions.TopLeft);
+        description.lineSpacing = 4f;
+        UI.Place(description.gameObject, 120f, 298f, 540f, 100f);
 
-        description.textWrappingMode = TextWrappingModes.Normal;
+        // Menú vertical: la opción apuntada se ilumina y lleva una marca de tinta.
+        GameObject list = UI.Node(mainPanel.transform, "Opciones");
+        UI.Place(list, 120f, 432f, 620f, 360f);
+        float y = 0f;
+        NeuroPhobiaMenuItem first = MenuItem(list.transform, "Iniciar", "Iniciar experiencia", ref y, StartExperience, false);
+        if (LevelSelectorEnabled) MenuItem(list.transform, "SeleccionarNivel", "Elegir nivel", ref y, ShowLevels, true);
+        MenuItem(list.transform, "ElegirNivel", "Mis datos", ref y, ShowProfile, false);
+        MenuItem(list.transform, "Instrucciones", "Controles e instrucciones", ref y, ShowInstructions, false);
+        MenuItem(list.transform, "Salir", "Salir", ref y, QuitGame, false);
+        first.Activate();
 
-        SetAnchors(
-            description.rectTransform,
-            new Vector2(0.00f, 0.26f),
-            new Vector2(0.92f, 0.48f));
+        feedbackText = UI.AddText(UI.Node(mainPanel.transform, "Estado"), "", UI.Face.Type, 21f, UI.Amber, TextAlignmentOptions.TopLeft);
+        UI.Place(feedbackText.gameObject, 120f, 792f, 640f, 70f);
 
-        GameObject routeCard = CreateCard(
-            left.transform,
-            "Ruta",
-            new Vector2(0.00f, 0.00f),
-            new Vector2(0.92f, 0.22f),
-            PanelSoft);
+        // Nota «Tu recorrido» clavada en el tablero.
+        GameObject routeShadow = UI.Node(mainPanel.transform, "RutaSombra");
+        UI.Place(routeShadow, 942f, 262f, 424f, 470f).localEulerAngles = new Vector3(0f, 0f, 1f);
+        UI.AddImage(routeShadow, UI.Shadow, new Color(0f, 0f, 0f, .55f));
+        GameObject route = UI.Node(mainPanel.transform, "Ruta");
+        UI.Place(route, 960f, 270f, 380f, LevelSelectorEnabled ? 430f : 360f).localEulerAngles = new Vector3(0f, 0f, 1f);
+        UI.AddImage(route, UI.PaperSheet, UI.Paper);
+        GameObject routeTape = UI.Node(route.transform, "Cinta");
+        UI.Place(routeTape, 135f, -14f, 110f, 30f).localEulerAngles = new Vector3(0f, 0f, -2f);
+        UI.AddImage(routeTape, UI.Tape, UI.WithAlpha(UI.Sage, .6f));
 
-        TMP_Text routeTitle = CreateText(
-            routeCard.transform,
-            "RutaTitulo",
-            "TU RECORRIDO",
-            16f,
-            FontStyles.Bold,
-            TextAlignmentOptions.Left,
-            Accent);
-
-        SetAnchors(
-            routeTitle.rectTransform,
-            new Vector2(0.05f, 0.68f),
-            new Vector2(0.95f, 0.92f));
-
-        TMP_Text route = CreateText(
-            routeCard.transform,
-            "RutaTexto",
-            "01  Psicoeducación     02  Distancia segura     03  Aproximación\n04  Contacto virtual     05  Desafío final",
-            17f,
-            FontStyles.Normal,
-            TextAlignmentOptions.Left,
-            Color.white);
-
-        SetAnchors(
-            route.rectTransform,
-            new Vector2(0.05f, 0.13f),
-            new Vector2(0.95f, 0.68f));
-
-        GameObject actionCard = CreateCard(
-            mainPanel.transform,
-            "Acciones",
-            new Vector2(0.64f, 0.16f),
-            new Vector2(0.945f, 0.84f),
-            Panel);
-
-        TMP_Text ready = CreateText(
-            actionCard.transform,
-            "Listo",
-            "¿LISTO PARA COMENZAR?",
-            26f,
-            FontStyles.Bold,
-            TextAlignmentOptions.Center,
-            Color.white);
-
-        SetAnchors(
-            ready.rectTransform,
-            new Vector2(0.08f, 0.82f),
-            new Vector2(0.92f, 0.95f));
-
-        TMP_Text helper = CreateText(
-            actionCard.transform,
-            "Ayuda",
-            "Puedes iniciar desde el Nivel 1 o elegir un nivel específico.",
-            17f,
-            FontStyles.Normal,
-            TextAlignmentOptions.Center,
-            Muted);
-
-        helper.textWrappingMode = TextWrappingModes.Normal;
-
-        SetAnchors(
-            helper.rectTransform,
-            new Vector2(0.10f, 0.70f),
-            new Vector2(0.90f, 0.82f));
-
-        CreateMenuButton(
-            actionCard.transform,
-            "Iniciar",
-            "INICIAR EXPERIENCIA",
-            new Vector2(0.10f, 0.58f),
-            new Vector2(0.90f, 0.69f),
-            Accent,
-            Color.black,
-            StartExperience);
-
-        CreateMenuButton(
-            actionCard.transform,
-            "SeleccionarNivel",
-            "ELEGIR NIVEL",
-            new Vector2(0.10f, 0.45f),
-            new Vector2(0.90f, 0.56f),
-            AccentBlue,
-            Color.white,
-            ShowLevels);
-
-        if (!LevelSelectorEnabled)
+        TMP_Text routeTitle = UI.AddText(UI.Node(route.transform, "RutaTitulo"), "TU RECORRIDO", UI.Face.TypeBold, 20f, UI.InkSoft, TextAlignmentOptions.MidlineLeft);
+        routeTitle.characterSpacing = 16f;
+        UI.Place(routeTitle.gameObject, 32f, 30f, 316f, 30f);
+        string[] steps = { "Psicoeducación", "Distancia segura", "Aproximación", "Contacto virtual", "Desafío final" };
+        for (int i = 0; i < steps.Length; i++)
         {
-            helper.gameObject.SetActive(false);
-            Transform selectorButton = actionCard.transform.Find("SeleccionarNivel");
-            if (selectorButton != null) selectorButton.gameObject.SetActive(false);
+            TMP_Text number = UI.AddText(UI.Node(route.transform, "RutaNumero" + (i + 1)), (i + 1).ToString("00"),
+                UI.Face.Display, 25f, UI.SageDeep, TextAlignmentOptions.MidlineLeft);
+            UI.Place(number.gameObject, 32f, 74f + i * 46f, 50f, 40f);
+            TMP_Text step = UI.AddText(UI.Node(route.transform, "RutaPaso" + (i + 1)), steps[i],
+                UI.Face.Body, 23f, UI.Ink, TextAlignmentOptions.MidlineLeft);
+            UI.Place(step.gameObject, 84f, 74f + i * 46f, 270f, 40f);
         }
 
-        CreateMenuButton(
-            actionCard.transform,
-            "ElegirNivel",
-            "MIS DATOS",
-            new Vector2(0.10f, 0.32f),
-            new Vector2(0.90f, 0.43f),
-            AccentBlue,
-            Color.white,
-            ShowProfile);
+        if (LevelSelectorEnabled)
+        {
+            GameObject rule = UI.Node(route.transform, "Separador");
+            UI.Place(rule, 32f, 316f, 316f, 1.5f);
+            UI.AddImage(rule, UI.Solid, UI.WithAlpha(UI.Ink, .3f));
+            TMP_Text helper = UI.AddText(UI.Node(route.transform, "Ayuda"), "Puedes iniciar desde el Nivel 1 o elegir un nivel específico.",
+                UI.Face.Body, 18f, UI.InkSoft, TextAlignmentOptions.TopLeft);
+            UI.Place(helper.gameObject, 32f, 330f, 316f, 70f);
+        }
+    }
 
-        CreateMenuButton(
-            actionCard.transform,
-            "Instrucciones",
-            "CONTROLES E INSTRUCCIONES",
-            new Vector2(0.10f, 0.19f),
-            new Vector2(0.90f, 0.30f),
-            new Color(0.13f, 0.16f, 0.21f, 1f),
-            Color.white,
-            ShowInstructions);
+    private NeuroPhobiaMenuItem MenuItem(Transform parent, string name, string label, ref float y,
+        UnityEngine.Events.UnityAction action, bool devOnly)
+    {
+        GameObject item = UI.Node(parent, name);
+        UI.Place(item, 0f, y, 620f, 64f);
+        y += 68f;
+        Image glow = UI.AddImage(item, UI.Solid, UI.WithAlpha(UI.Sage, 0f), true);
+        Button button = item.AddComponent<Button>();
+        button.targetGraphic = glow;
+        button.transition = Selectable.Transition.None;
+        button.onClick.AddListener(action);
 
-        CreateMenuButton(
-            actionCard.transform,
-            "Salir",
-            "SALIR",
-            new Vector2(0.10f, 0.06f),
-            new Vector2(0.90f, 0.17f),
-            new Color(0.17f, 0.10f, 0.13f, 1f),
-            new Color(0.95f, 0.70f, 0.74f, 1f),
-            QuitGame);
+        GameObject inkGo = UI.Node(item.transform, "Tinta");
+        UI.Place(inkGo, 4f, 19f, 36f, 26f);
+        Image inkMark = UI.AddImage(inkGo, UI.InkMark, UI.WithAlpha(UI.Sage, 0f));
 
-        feedbackText = CreateText(
-            actionCard.transform,
-            "Estado",
-            "",
-            15f,
-            FontStyles.Normal,
-            TextAlignmentOptions.Center,
-            new Color(0.95f, 0.72f, 0.40f, 1f));
+        TMP_Text text = UI.AddText(UI.Node(item.transform, "Texto"), label, UI.Face.Type, 30f, UI.Sepia, TextAlignmentOptions.MidlineLeft);
+        text.textWrappingMode = TextWrappingModes.NoWrap;
+        UI.Place(text.gameObject, 50f, 0f, 560f, 64f);
+        if (devOnly) UI.DevTag(item.transform, 50f + text.GetPreferredValues(label, 560f, 64f).x + 16f, 32f);
 
-        SetAnchors(
-            feedbackText.rectTransform,
-            new Vector2(0.08f, 0.005f),
-            new Vector2(0.92f, 0.075f));
+        NeuroPhobiaMenuItem menuItem = item.AddComponent<NeuroPhobiaMenuItem>();
+        menuItem.Setup(inkMark, glow, text);
+        return menuItem;
+    }
+
+    /// <summary>Pantalla secundaria: tablero más oscuro, ruta arriba a la izquierda y una hoja de papel.</summary>
+    private GameObject BuildScreen(Transform parent, string name, string crumb, float x, float y, float w, float h,
+        string title, string lead, float leadHeight, out Transform sheet)
+    {
+        GameObject screen = CreateUIObject(parent, name);
+        Stretch(screen.GetComponent<RectTransform>());
+        UI.AddImage(screen, UI.Solid, UI.WithAlpha(UI.Night, .55f), true);
+
+        TMP_Text path = UI.AddText(UI.Node(screen.transform, "RutaPantalla"), "NEUROPHOBIA  ·  " + crumb.ToUpperInvariant(),
+            UI.Face.Type, 20f, UI.Sepia, TextAlignmentOptions.MidlineLeft);
+        path.characterSpacing = 10f;
+        UI.Place(path.gameObject, 120f, 44f, 1000f, 36f);
+
+        sheet = UI.Sheet(screen.transform, "Hoja", x, y, w, h).transform;
+        TMP_Text heading = UI.AddText(UI.Node(sheet, "Titulo"), title, UI.Face.Display, 50f, UI.Ink, TextAlignmentOptions.TopLeft);
+        UI.Place(heading.gameObject, 60f, 48f, w - 120f, 64f);
+        if (!string.IsNullOrEmpty(lead))
+        {
+            TMP_Text body = UI.AddText(UI.Node(sheet, "Descripcion"), lead, UI.Face.Body, 25f, UI.InkSoft, TextAlignmentOptions.TopLeft);
+            UI.Place(body.gameObject, 60f, 124f, w - 120f, leadHeight);
+        }
+        screen.SetActive(false);
+        return screen;
+    }
+
+    private static TMP_Text PaperButton(Transform parent, string name, string label, UI.ButtonKind kind,
+        float x, float y, float w, float h, UnityEngine.Events.UnityAction action, float fontSize = 25f)
+    {
+        TMP_Text text = UI.Button(parent, name, label, kind, fontSize, action, out Button button);
+        UI.Place(button.gameObject, x, y, w, h);
+        return text;
     }
 
     private void BuildLevelsPanel(Transform parent)
     {
-        levelsPanel = CreateUIObject(parent, "PanelNiveles");
-        Stretch(levelsPanel.GetComponent<RectTransform>());
+        levelsPanel = BuildScreen(parent, "PanelNiveles", "Elegir nivel", 110f, 130f, 1240f, 640f,
+            "Selecciona un nivel", "Cada nivel aumenta gradualmente el grado de exposición.", 40f, out Transform sheet);
 
-        GameObject shade = CreateUIObject(levelsPanel.transform, "Sombra");
-        Stretch(shade.GetComponent<RectTransform>());
-        Image shadeImage = shade.AddComponent<Image>();
-        shadeImage.color = new Color(0f, 0f, 0f, 0.80f);
-
-        GameObject card = CreateCard(
-            shade.transform,
-            "TarjetaNiveles",
-            new Vector2(0.18f, 0.13f),
-            new Vector2(0.82f, 0.87f),
-            new Color(0.045f, 0.06f, 0.085f, 0.995f));
-
-        TMP_Text title = CreateText(
-            card.transform,
-            "Titulo",
-            "SELECCIONA UN NIVEL",
-            36f,
-            FontStyles.Bold,
-            TextAlignmentOptions.Center,
-            Color.white);
-
-        SetAnchors(
-            title.rectTransform,
-            new Vector2(0.08f, 0.84f),
-            new Vector2(0.92f, 0.95f));
-
-        TMP_Text subtitle = CreateText(
-            card.transform,
-            "Subtitulo",
-            "Cada nivel aumenta gradualmente el grado de exposición.",
-            18f,
-            FontStyles.Normal,
-            TextAlignmentOptions.Center,
-            Muted);
-
-        SetAnchors(
-            subtitle.rectTransform,
-            new Vector2(0.08f, 0.77f),
-            new Vector2(0.92f, 0.85f));
-
-        CreateLevelButton(
-            card.transform,
-            1,
-            "PSICOEDUCACIÓN",
+        string[] titles = { "PSICOEDUCACIÓN", "DISTANCIA SEGURA", "APROXIMACIÓN PROGRESIVA", "CONTACTO VIRTUAL", "DESAFÍO FINAL" };
+        string[] descriptions =
+        {
             "Respiración y exposición mediante imágenes.",
-            0.62f,
-            () => ChooseLevel(1));
-
-        CreateLevelButton(
-            card.transform,
-            2,
-            "DISTANCIA SEGURA",
             "Observación continua de una araña a distancia.",
-            0.49f,
-            () => ChooseLevel(2));
-
-        CreateLevelButton(
-            card.transform,
-            3,
-            "APROXIMACIÓN PROGRESIVA",
             "Acércate mediante puntos de exposición controlados.",
-            0.36f,
-            () => ChooseLevel(3));
-
-        CreateLevelButton(
-            card.transform,
-            4,
-            "CONTACTO VIRTUAL",
             "Interacción cercana en un entorno doméstico.",
-            0.23f,
-            () => ChooseLevel(4));
+            "Integra lo aprendido en un escenario más complejo."
+        };
+        const float cardWidth = 213f;
+        for (int i = 0; i < titles.Length; i++)
+        {
+            int level = i + 1;
+            CreateLevelButton(sheet, level, titles[i], descriptions[i], 50f + i * (cardWidth + 18f), cardWidth, () => ChooseLevel(level));
+        }
 
-        CreateLevelButton(
-            card.transform,
-            5,
-            "DESAFÍO FINAL",
-            "Integra lo aprendido en un escenario más complejo.",
-            0.10f,
-            () => ChooseLevel(5));
-
-        CreateMenuButton(
-            card.transform,
-            "Volver",
-            "VOLVER",
-            new Vector2(0.34f, 0.015f),
-            new Vector2(0.66f, 0.085f),
-            new Color(0.12f, 0.15f, 0.20f, 1f),
-            Color.white,
-            ShowMain);
+        PaperButton(sheet, "Volver", "Volver", UI.ButtonKind.Secondary, 50f, 544f, 156f, 68f, ShowMain);
     }
 
     private void BuildInstructionsPanel(Transform parent)
     {
-        instructionsPanel = CreateUIObject(parent, "PanelInstrucciones");
-        Stretch(instructionsPanel.GetComponent<RectTransform>());
+        instructionsPanel = BuildScreen(parent, "PanelInstrucciones", "Controles e instrucciones", 210f, 120f, 1020f, 614f,
+            "Controles e instrucciones", null, 0f, out Transform sheet);
 
-        GameObject shade = CreateUIObject(instructionsPanel.transform, "Sombra");
-        Stretch(shade.GetComponent<RectTransform>());
-        Image shadeImage = shade.AddComponent<Image>();
-        shadeImage.color = new Color(0f, 0f, 0f, 0.80f);
+        Transform pc = InfoColumn(sheet, "Computador", "COMPUTADOR", 60f);
+        string[,] keys = { { "W A S D", "Movimiento" }, { "Mouse", "Mirar" }, { "Shift", "Correr" }, { "Escape", "Liberar cursor" } };
+        for (int i = 0; i < keys.GetLength(0); i++)
+        {
+            TMP_Text key = UI.AddText(UI.Node(pc, "Tecla" + i), keys[i, 0], UI.Face.TypeBold, 22f, UI.Ink, TextAlignmentOptions.MidlineLeft);
+            UI.Place(key.gameObject, 28f, 64f + i * 42f, 140f, 36f);
+            TMP_Text what = UI.AddText(UI.Node(pc, "Accion" + i), keys[i, 1], UI.Face.Body, 22f, UI.Ink, TextAlignmentOptions.MidlineLeft);
+            UI.Place(what.gameObject, 172f, 64f + i * 42f, 240f, 36f);
+        }
 
-        GameObject card = CreateCard(
-            shade.transform,
-            "TarjetaInstrucciones",
-            new Vector2(0.20f, 0.14f),
-            new Vector2(0.80f, 0.86f),
-            new Color(0.045f, 0.06f, 0.085f, 0.995f));
-
-        TMP_Text title = CreateText(
-            card.transform,
-            "Titulo",
-            "CONTROLES E INSTRUCCIONES",
-            34f,
-            FontStyles.Bold,
-            TextAlignmentOptions.Center,
-            Color.white);
-
-        SetAnchors(
-            title.rectTransform,
-            new Vector2(0.06f, 0.84f),
-            new Vector2(0.94f, 0.95f));
-
-        GameObject pcCard = CreateCard(
-            card.transform,
-            "Computador",
-            new Vector2(0.07f, 0.42f),
-            new Vector2(0.48f, 0.78f),
-            PanelSoft);
-
-        TMP_Text pcTitle = CreateText(
-            pcCard.transform,
-            "TituloPC",
-            "COMPUTADOR",
-            23f,
-            FontStyles.Bold,
-            TextAlignmentOptions.Left,
-            Accent);
-
-        SetAnchors(
-            pcTitle.rectTransform,
-            new Vector2(0.07f, 0.74f),
-            new Vector2(0.93f, 0.92f));
-
-        TMP_Text pcText = CreateText(
-            pcCard.transform,
-            "TextoPC",
-            "W A S D  ·  Movimiento\nMouse  ·  Mirar\nShift  ·  Correr\nEscape  ·  Liberar cursor",
-            20f,
-            FontStyles.Normal,
-            TextAlignmentOptions.Left,
-            Color.white);
-
-        SetAnchors(
-            pcText.rectTransform,
-            new Vector2(0.07f, 0.12f),
-            new Vector2(0.93f, 0.72f));
-
-        GameObject vrCard = CreateCard(
-            card.transform,
-            "RV",
-            new Vector2(0.52f, 0.42f),
-            new Vector2(0.93f, 0.78f),
-            PanelSoft);
-
-        TMP_Text vrTitle = CreateText(
-            vrCard.transform,
-            "TituloRV",
-            "REALIDAD VIRTUAL",
-            23f,
-            FontStyles.Bold,
-            TextAlignmentOptions.Left,
-            AccentBlue);
-
-        SetAnchors(
-            vrTitle.rectTransform,
-            new Vector2(0.07f, 0.74f),
-            new Vector2(0.93f, 0.92f));
-
-        TMP_Text vrText = CreateText(
-            vrCard.transform,
-            "TextoRV",
+        Transform vr = InfoColumn(sheet, "RV", "REALIDAD VIRTUAL", 523f);
+        TMP_Text vrText = UI.AddText(UI.Node(vr, "TextoRV"),
             "Usa el visor y los controladores.\nAntes de cada nivel podrás escoger entre Computador y RV.\nMantén movimientos cómodos y controlados.",
-            19f,
-            FontStyles.Normal,
-            TextAlignmentOptions.Left,
-            Color.white);
+            UI.Face.Body, 22f, UI.Ink, TextAlignmentOptions.TopLeft);
+        vrText.paragraphSpacing = 10f;
+        UI.Place(vrText.gameObject, 28f, 64f, 381f, 176f);
 
-        vrText.textWrappingMode = TextWrappingModes.Normal;
-
-        SetAnchors(
-            vrText.rectTransform,
-            new Vector2(0.07f, 0.12f),
-            new Vector2(0.93f, 0.72f));
-
-        TMP_Text note = CreateText(
-            card.transform,
-            "Nota",
+        GameObject bar = UI.Node(sheet, "NotaBarra");
+        UI.Place(bar, 60f, 404f, 4f, 70f);
+        UI.AddImage(bar, UI.Solid, UI.SageDeep);
+        TMP_Text note = UI.AddText(UI.Node(sheet, "Nota"),
             "La exposición es gradual. Puedes detenerte cuando lo necesites y continuar cuando estés preparado.",
-            19f,
-            FontStyles.Normal,
-            TextAlignmentOptions.Center,
-            Muted);
+            UI.Face.Body, 22f, UI.InkSoft, TextAlignmentOptions.MidlineLeft);
+        UI.Place(note.gameObject, 80f, 404f, 880f, 70f);
 
-        note.textWrappingMode = TextWrappingModes.Normal;
-
-        SetAnchors(
-            note.rectTransform,
-            new Vector2(0.10f, 0.20f),
-            new Vector2(0.90f, 0.37f));
-
-        CreateMenuButton(
-            card.transform,
-            "Volver",
-            "VOLVER AL MENÚ",
-            new Vector2(0.32f, 0.055f),
-            new Vector2(0.68f, 0.15f),
-            Accent,
-            Color.black,
-            ShowMain);
+        PaperButton(sheet, "Volver", "Volver al menú", UI.ButtonKind.Secondary, 60f, 500f, 250f, 68f, ShowMain);
     }
 
-    private void CreateLevelButton(
-        Transform parent,
-        int number,
-        string title,
-        string description,
-        float anchorY,
+    private static Transform InfoColumn(Transform sheet, string name, string heading, float x)
+    {
+        GameObject column = UI.Node(sheet, name);
+        UI.Place(column, x, 128f, 437f, 250f);
+        UI.AddImage(column, UI.Solid, UI.PaperLight);
+        GameObject border = UI.Node(column.transform, "Borde");
+        UI.Stretch(border);
+        UI.AddImage(border, UI.Frame, UI.WithAlpha(UI.Ink, .25f)).fillCenter = false;
+        TMP_Text title = UI.AddText(UI.Node(column.transform, "Titulo"), heading, UI.Face.TypeBold, 22f, UI.SageDeep, TextAlignmentOptions.MidlineLeft);
+        title.characterSpacing = 14f;
+        UI.Place(title.gameObject, 28f, 20f, 381f, 34f);
+        return column.transform;
+    }
+
+    private void CreateLevelButton(Transform parent, int number, string title, string description, float x, float width,
         UnityEngine.Events.UnityAction action)
     {
-        GameObject buttonObject = CreateUIObject(
-            parent,
-            "Nivel_" + number);
+        UI.Button(parent, "Nivel_" + number, "", UI.ButtonKind.Secondary, 20f, action, out Button button);
+        UI.Place(button.gameObject, x, 214f, width, 300f);
+        Transform card = button.transform;
+        Image border = card.Find("Borde").GetComponent<Image>();
+        border.color = UI.WithAlpha(UI.Ink, .3f);
 
-        RectTransform rect = buttonObject.GetComponent<RectTransform>();
-        SetAnchors(
-            rect,
-            new Vector2(0.08f, anchorY),
-            new Vector2(0.92f, anchorY + 0.105f));
+        GameObject band = UI.Node(card, "Banda");
+        UI.Place(band, 0f, 0f, width, 8f);
+        UI.AddImage(band, UI.Solid, UI.Ink);
 
-        Image image = buttonObject.AddComponent<Image>();
-        image.color = new Color(0.075f, 0.10f, 0.135f, 1f);
-
-        Button button = buttonObject.AddComponent<Button>();
-        button.targetGraphic = image;
-        button.onClick.AddListener(action);
-
-        ColorBlock colors = button.colors;
-        colors.normalColor = image.color;
-        colors.highlightedColor = new Color(0.10f, 0.18f, 0.22f, 1f);
-        colors.pressedColor = new Color(0.07f, 0.45f, 0.42f, 1f);
-        colors.selectedColor = colors.highlightedColor;
-        button.colors = colors;
-
-        TMP_Text numberText = CreateText(
-            buttonObject.transform,
-            "Numero",
-            number.ToString("00"),
-            25f,
-            FontStyles.Bold,
-            TextAlignmentOptions.Center,
-            Accent);
-
-        SetAnchors(
-            numberText.rectTransform,
-            new Vector2(0.02f, 0.10f),
-            new Vector2(0.13f, 0.90f));
-
-        TMP_Text titleText = CreateText(
-            buttonObject.transform,
-            "Titulo",
-            title,
-            18f,
-            FontStyles.Bold,
-            TextAlignmentOptions.Left,
-            Color.white);
-
-        SetAnchors(
-            titleText.rectTransform,
-            new Vector2(0.15f, 0.48f),
-            new Vector2(0.95f, 0.88f));
-
-        TMP_Text descriptionText = CreateText(
-            buttonObject.transform,
-            "Descripcion",
-            description,
-            14f,
-            FontStyles.Normal,
-            TextAlignmentOptions.Left,
-            Muted);
-
-        SetAnchors(
-            descriptionText.rectTransform,
-            new Vector2(0.15f, 0.10f),
-            new Vector2(0.95f, 0.50f));
-    }
-
-    private GameObject CreateCard(
-        Transform parent,
-        string name,
-        Vector2 min,
-        Vector2 max,
-        Color color)
-    {
-        GameObject card = CreateUIObject(parent, name);
-
-        RectTransform rect = card.GetComponent<RectTransform>();
-        SetAnchors(rect, min, max);
-
-        Image image = card.AddComponent<Image>();
-        image.color = color;
-
-        Outline outline = card.AddComponent<Outline>();
-        outline.effectColor = new Color(0.20f, 0.36f, 0.44f, 0.35f);
-        outline.effectDistance = new Vector2(1f, -1f);
-
-        return card;
-    }
-
-    private void CreateMenuButton(
-        Transform parent,
-        string name,
-        string label,
-        Vector2 min,
-        Vector2 max,
-        Color background,
-        Color foreground,
-        UnityEngine.Events.UnityAction action)
-    {
-        GameObject buttonObject = CreateUIObject(parent, name);
-
-        RectTransform rect = buttonObject.GetComponent<RectTransform>();
-        SetAnchors(rect, min, max);
-
-        Image image = buttonObject.AddComponent<Image>();
-        image.color = background;
-
-        Button button = buttonObject.AddComponent<Button>();
-        button.targetGraphic = image;
-        button.onClick.AddListener(action);
-
-        ColorBlock colors = button.colors;
-        colors.normalColor = background;
-        colors.highlightedColor = Color.Lerp(background, Color.white, 0.12f);
-        colors.pressedColor = Color.Lerp(background, Color.black, 0.18f);
-        colors.selectedColor = colors.highlightedColor;
-        button.colors = colors;
-
-        TMP_Text text = CreateText(
-            buttonObject.transform,
-            "Texto",
-            label,
-            19f,
-            FontStyles.Bold,
-            TextAlignmentOptions.Center,
-            foreground);
-
-        Stretch(text.rectTransform);
-    }
-
-    private void CreateDecorativeBlock(
-        Transform parent,
-        string name,
-        Vector2 min,
-        Vector2 max,
-        Color color)
-    {
-        GameObject block = CreateUIObject(parent, name);
-        SetAnchors(block.GetComponent<RectTransform>(), min, max);
-
-        Image image = block.AddComponent<Image>();
-        image.color = color;
-        image.raycastTarget = false;
+        TMP_Text numberText = UI.AddText(UI.Node(card, "Numero"), number.ToString("00"), UI.Face.Display, 48f, UI.SageDeep, TextAlignmentOptions.TopLeft);
+        UI.Place(numberText.gameObject, 20f, 24f, width - 40f, 56f);
+        TMP_Text titleText = UI.AddText(UI.Node(card, "Titulo"), title, UI.Face.TypeBold, 22f, UI.Ink, TextAlignmentOptions.TopLeft);
+        titleText.lineSpacing = -8f;
+        UI.Place(titleText.gameObject, 20f, 86f, width - 36f, 60f);
+        TMP_Text descriptionText = UI.AddText(UI.Node(card, "Descripcion"), description, UI.Face.Body, 20f, UI.InkSoft, TextAlignmentOptions.TopLeft);
+        UI.Place(descriptionText.gameObject, 20f, 152f, width - 36f, 136f);
     }
 
     private static TMP_Text CreateText(
@@ -831,9 +450,8 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         GameObject go = CreateUIObject(parent, name);
 
         TextMeshProUGUI text = go.AddComponent<TextMeshProUGUI>();
+        UI.Style(text, style == FontStyles.Bold ? UI.Face.TypeBold : UI.Face.Body, fontSize, color);
         text.text = value;
-        text.fontSize = fontSize;
-        text.fontStyle = style;
         text.alignment = alignment;
         text.color = color;
         text.textWrappingMode = TextWrappingModes.Normal;
@@ -948,7 +566,9 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
 
         if (feedbackText != null)
         {
-            feedbackText.text = "";
+            // BPMN «¿Almacena datos? no → mensaje de error»: se avisa al volver al menú.
+            FastAPIClient api = Api();
+            feedbackText.text = api != null && api.StorageFailed ? api.LastError : "";
         }
     }
 
@@ -992,27 +612,65 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
 
     private void BuildSessionPanels(Transform parent)
     {
-        consentPanel = BuildSimplePanel(parent, "Consentimiento", "Bienvenido a NeuroPhobia", "Esta es una experiencia de exposición gradual en realidad virtual. Puedes pausar o detener la experiencia cuando lo necesites.");
-        CreateMenuButton(consentPanel.transform, "Aceptar", "Aceptar y continuar", new Vector2(.22f,.24f), new Vector2(.78f,.33f), Accent, Color.black, ShowGrade);
-        CreateMenuButton(consentPanel.transform, "Salir", "Salir", new Vector2(.22f,.12f), new Vector2(.78f,.21f), PanelSoft, Color.white, ShowMain);
+        consentPanel = BuildScreen(parent, "Consentimiento", "Consentimiento", 300f, 180f, 840f, 384f, "Bienvenido a NeuroPhobia",
+            "Esta es una experiencia de exposición gradual en realidad virtual. Puedes pausar o detener la experiencia cuando lo necesites.",
+            120f, out Transform consentSheet);
+        PaperButton(consentSheet, "Aceptar", "Aceptar y continuar", UI.ButtonKind.Primary, 60f, 270f, 351f, 68f, AfterConsent);
+        PaperButton(consentSheet, "Salir", "Salir", UI.ButtonKind.Secondary, 429f, 270f, 351f, 68f, ShowMain);
 
-        gradePanel = BuildSimplePanel(parent, "EvaluacionInicial", "Evaluación inicial", "¿Qué grado de miedo o fobia percibes actualmente?\n1 = menor intensidad     5 = mayor intensidad");
+        gradePanel = BuildScreen(parent, "EvaluacionInicial", "Evaluación inicial", 260f, 150f, 920f, 558f, "Evaluación inicial",
+            "¿Qué grado de miedo o fobia percibes actualmente?", 40f, out Transform gradeSheet);
+        const float gradeWidth = 147f;
         for (int grade = 1; grade <= 5; grade++)
         {
             int selected = grade;
-            float left = .15f + (grade - 1) * .145f;
-            CreateMenuButton(gradePanel.transform, "Grado" + grade, grade.ToString(), new Vector2(left,.34f), new Vector2(left + .11f,.46f), AccentBlue, Color.white, () => SelectGrade(selected));
+            float x = 60f + (grade - 1) * (gradeWidth + 16f);
+            TMP_Text number = PaperButton(gradeSheet, "Grado" + grade, grade.ToString(), UI.ButtonKind.Secondary, x, 210f, gradeWidth, 120f,
+                () => SelectGrade(selected), 58f);
+            UI.Style(number, UI.Face.Display, 58f, UI.Ink);
+            number.margin = new Vector4(0f, 0f, 0f, 22f);
+            if (grade == 1 || grade == 5)
+            {
+                TMP_Text end = UI.AddText(UI.Node(number.transform.parent, "Extremo"), grade == 1 ? "menor" : "mayor",
+                    UI.Face.Type, 16f, UI.InkSoft, TextAlignmentOptions.Center);
+                UI.Place(end.gameObject, 0f, 84f, gradeWidth, 24f);
+            }
         }
-        CreateMenuButton(gradePanel.transform, "Volver", "Volver", new Vector2(.30f,.14f), new Vector2(.70f,.23f), PanelSoft, Color.white, ShowConsent);
+        TMP_Text low = UI.AddText(UI.Node(gradeSheet, "LeyendaMenor"), "1 = menor intensidad", UI.Face.Type, 19f, UI.InkSoft, TextAlignmentOptions.MidlineLeft);
+        UI.Place(low.gameObject, 60f, 342f, 400f, 30f);
+        TMP_Text high = UI.AddText(UI.Node(gradeSheet, "LeyendaMayor"), "5 = mayor intensidad", UI.Face.Type, 19f, UI.InkSoft, TextAlignmentOptions.MidlineRight);
+        UI.Place(high.gameObject, 460f, 342f, 400f, 30f);
+        gradeHint = UI.AddText(UI.Node(gradeSheet, "UltimoGrado"), "", UI.Face.Type, 22f, UI.InkSoft, TextAlignmentOptions.MidlineLeft);
+        UI.Place(gradeHint.gameObject, 60f, 392f, 800f, 34f);
+        PaperButton(gradeSheet, "Volver", "Volver", UI.ButtonKind.Secondary, 60f, 444f, 156f, 68f, ShowConsent);
+        // Recomendación del backend (GET /device/context), junto a «Volver».
+        recommendationHint = UI.AddText(UI.Node(gradeSheet, "Recomendacion"), "", UI.Face.Type, 19f, UI.SageDeep, TextAlignmentOptions.MidlineLeft);
+        recommendationHint.textWrappingMode = TextWrappingModes.Normal;
+        UI.Place(recommendationHint.gameObject, 240f, 444f, 620f, 68f);
 
-        profilePanel = BuildSimplePanel(parent, "MisDatos", "MIS DATOS", "Nombre y correo electrónico. Validación local durante esta ejecución.");
-        nameInput = CreateInput(profilePanel.transform, "Nombre", .51f);
-        emailInput = CreateInput(profilePanel.transform, "Correo electrónico", .40f);
-        CreateMenuButton(profilePanel.transform, "Validar", "Validar", new Vector2(.18f,.26f), new Vector2(.46f,.34f), AccentBlue, Color.white, ValidateProfile);
-        CreateMenuButton(profilePanel.transform, "Guardar", "Guardar cambios", new Vector2(.54f,.26f), new Vector2(.82f,.34f), Accent, Color.black, SaveProfile);
-        CreateMenuButton(profilePanel.transform, "Volver", "Volver", new Vector2(.33f,.10f), new Vector2(.67f,.18f), PanelSoft, Color.white, ShowMain);
-        profileStatus = CreateText(profilePanel.transform, "EstadoValidacion", "", 17f, FontStyles.Normal, TextAlignmentOptions.Center, Color.white);
-        SetAnchors(profileStatus.rectTransform, new Vector2(.15f,.19f), new Vector2(.85f,.25f));
+        BuildPairingPanel(parent);
+
+        profilePanel = BuildScreen(parent, "MisDatos", "Mis datos", 190f, 130f, 1060f, 706f, "Mis datos",
+            "Nombre y correo electrónico. Validación local durante esta ejecución.", 40f, out Transform profileSheet);
+        nameInput = CreateInput(profileSheet, "Nombre", 60f);
+        emailInput = CreateInput(profileSheet, "Correo electrónico", 542f);
+        PaperButton(profileSheet, "Validar", "Validar", UI.ButtonKind.Secondary, 60f, 300f, 461f, 68f, ValidateProfile);
+        PaperButton(profileSheet, "Guardar", "Guardar cambios", UI.ButtonKind.Primary, 539f, 300f, 461f, 68f, SaveProfile);
+        profileStatus = UI.AddText(UI.Node(profileSheet, "EstadoValidacion"), "", UI.Face.Type, 22f, UI.AmberInk, TextAlignmentOptions.MidlineLeft);
+        UI.Place(profileStatus.gameObject, 60f, 380f, 940f, 40f);
+
+        GameObject device = UI.Node(profileSheet, "Dispositivo");
+        UI.Place(device, 60f, 440f, 940f, 128f);
+        UI.AddImage(device, UI.Solid, UI.WithAlpha(UI.SageDeep, .09f));
+        GameObject deviceBorder = UI.Node(device.transform, "Borde");
+        UI.Stretch(deviceBorder);
+        UI.AddImage(deviceBorder, UI.Frame, UI.WithAlpha(UI.SageDeep, .5f)).fillCenter = false;
+        deviceStatus = UI.AddText(UI.Node(device.transform, "EstadoVisor"), "", UI.Face.Type, 21f, UI.Ink, TextAlignmentOptions.MidlineLeft);
+        UI.Place(deviceStatus.gameObject, 22f, 10f, 560f, 108f);
+        deviceButtonLabel = PaperButton(device.transform, "Visor", "Cerrar sesión del visor", UI.ButtonKind.Secondary, 600f, 30f, 318f, 68f,
+            ToggleDeviceSession, 23f);
+
+        PaperButton(profileSheet, "Volver", "Volver", UI.ButtonKind.Secondary, 60f, 592f, 156f, 68f, ShowMain);
     }
 
     private void HideSessionPanels()
@@ -1020,39 +678,48 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         if (consentPanel != null) consentPanel.SetActive(false);
         if (gradePanel != null) gradePanel.SetActive(false);
         if (profilePanel != null) profilePanel.SetActive(false);
+        if (pairingPanel != null) pairingPanel.SetActive(false);
     }
 
-    private GameObject BuildSimplePanel(Transform parent, string name, string title, string description)
+    private TMP_InputField CreateInput(Transform parent, string label, float x)
     {
-        GameObject panel = CreateUIObject(parent, name);
-        Stretch(panel.GetComponent<RectTransform>());
-        panel.AddComponent<Image>().color = new Color(.025f,.035f,.055f,.98f);
-        TMP_Text heading = CreateText(panel.transform, "Titulo", title, 38f, FontStyles.Bold, TextAlignmentOptions.Center, Color.white);
-        SetAnchors(heading.rectTransform, new Vector2(.14f,.72f), new Vector2(.86f,.84f));
-        TMP_Text body = CreateText(panel.transform, "Descripcion", description, 23f, FontStyles.Normal, TextAlignmentOptions.Center, Muted);
-        SetAnchors(body.rectTransform, new Vector2(.17f,.51f), new Vector2(.83f,.68f));
-        return panel;
-    }
+        TMP_Text caption = UI.AddText(UI.Node(parent, label + "Etiqueta"), label.ToUpperInvariant(), UI.Face.Type, 19f, UI.InkSoft, TextAlignmentOptions.BottomLeft);
+        caption.characterSpacing = 8f;
+        UI.Place(caption.gameObject, x, 180f, 458f, 28f);
 
-    private TMP_InputField CreateInput(Transform parent, string label, float bottom)
-    {
-        TMP_Text caption = CreateText(parent, label + "Etiqueta", label, 17f, FontStyles.Normal, TextAlignmentOptions.Left, Muted);
-        SetAnchors(caption.rectTransform, new Vector2(.22f,bottom + .07f), new Vector2(.78f,bottom + .12f));
-        GameObject field = CreateUIObject(parent, label + "Campo");
-        SetAnchors(field.GetComponent<RectTransform>(), new Vector2(.22f,bottom), new Vector2(.78f,bottom + .07f));
-        field.AddComponent<Image>().color = PanelSoft;
-        TMP_Text value = CreateText(field.transform, "Valor", "", 19f, FontStyles.Normal, TextAlignmentOptions.Left, Color.white);
-        SetAnchors(value.rectTransform, new Vector2(.03f,0), new Vector2(.97f,1));
+        GameObject field = UI.Node(parent, label + "Campo");
+        UI.Place(field, x, 214f, 458f, 62f);
+        Image background = UI.AddImage(field, UI.Solid, UI.PaperLight, true);
+        GameObject underline = UI.Node(field.transform, "Subrayado");
+        UI.Place(underline, 0f, 59f, 458f, 3f);
+        UI.AddImage(underline, UI.Solid, UI.Ink);
+
+        GameObject area = UI.Node(field.transform, "Area");
+        UI.Place(area, 16f, 0f, 426f, 59f);
+        TMP_Text value = UI.AddText(UI.Node(area.transform, "Valor"), "", UI.Face.Type, 26f, UI.Ink, TextAlignmentOptions.MidlineLeft);
+        value.textWrappingMode = TextWrappingModes.NoWrap;
+        UI.Stretch(value.gameObject);
+
         TMP_InputField input = field.AddComponent<TMP_InputField>();
-        input.textViewport = field.GetComponent<RectTransform>();
+        input.targetGraphic = background;
+        input.textViewport = area.GetComponent<RectTransform>();
         input.textComponent = (TextMeshProUGUI)value;
+        input.fontAsset = UI.Font(UI.Face.Type);
+        input.pointSize = 26f;
+        input.selectionColor = UI.WithAlpha(UI.Sage, .5f);
+        input.caretColor = UI.Ink;
+        ColorBlock colors = input.colors;
+        colors.normalColor = UI.PaperLight;
+        colors.highlightedColor = UI.OnAccent;
+        colors.selectedColor = UI.OnAccent;
+        input.colors = colors;
         input.text = label == "Nombre" ? localName : localEmail;
         return input;
     }
 
     public void ShowConsent() { ShowMain(); mainPanel.SetActive(false); consentPanel.SetActive(true); }
-    public void ShowGrade() { ShowMain(); mainPanel.SetActive(false); gradePanel.SetActive(true); }
-    public void ShowProfile() { ShowMain(); mainPanel.SetActive(false); profilePanel.SetActive(true); }
+    public void ShowGrade() { ShowMain(); mainPanel.SetActive(false); gradePanel.SetActive(true); UpdateGradeHint(); }
+    public void ShowProfile() { ShowMain(); mainPanel.SetActive(false); profilePanel.SetActive(true); UpdateDeviceStatus(); }
 
     private void SelectGrade(int grade)
     {
@@ -1063,23 +730,198 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
             feedbackText.text = "No se encontró SessionManager.";
             return;
         }
-        bool testSession = LevelSelectorEnabled && selectedLevel > 0;
+        FastAPIClient api = Api();
+        // Sin visor vinculado solo se llega aquí en Editor o build de desarrollo: se marca como sesión de prueba.
+        bool testSession = (LevelSelectorEnabled && selectedLevel > 0) || (api != null && !api.IsPaired);
+        // BPMN «Ajustar grado de fobia»: el grado se guarda en el backend antes de comenzar.
+        if (api != null && api.IsPaired) api.StartCoroutine(api.PutPhobiaGrade(grade));
         SessionManager.Instance.StartSession(grade, testSession);
-        int initialLevel = testSession ? selectedLevel : SessionManager.Instance.ResolveInitialLevel(grade);
+        int initialLevel = LevelSelectorEnabled && selectedLevel > 0
+            ? selectedLevel
+            : Mathf.Max(SessionManager.Instance.ResolveInitialLevel(grade), api != null ? api.AllowedStartLevel() : 1);
         selectedLevel = 0;
         SessionManager.Instance.CurrentLevel = initialLevel;
         LoadLevel("Nivel" + initialLevel);
+    }
+
+    private static FastAPIClient Api()
+    {
+        return SessionManager.Instance != null ? SessionManager.Instance.GetComponent<FastAPIClient>() : FindFirstObjectByType<FastAPIClient>();
+    }
+
+    // Consentimiento aceptado → inicio de sesión del visor (si hace falta) → ajustar grado de fobia.
+    private void AfterConsent()
+    {
+        FastAPIClient api = Api();
+        if (api != null && !api.IsPaired) ShowPairing();
+        else ShowGrade();
+    }
+
+    private void ShowPairing()
+    {
+        ShowMain();
+        mainPanel.SetActive(false);
+        pairingCode = "";
+        pairingStatus.text = "";
+        UpdatePairingCode();
+        pairingPanel.SetActive(true);
+    }
+
+    private void BuildPairingPanel(Transform parent)
+    {
+        pairingPanel = BuildScreen(parent, "VincularVisor", "Vincular visor", 110f, 110f, 1260f, 690f, "Vincular visor",
+            "Escribe el código de 6 caracteres que genera la web en «Mi visor». Vale 10 minutos y solo se puede usar una vez.",
+            80f, out Transform sheet);
+
+        // Seis casillas para el código (3 + 3), con la siguiente posición marcada en salvia.
+        pairingSlots = new TMP_Text[6];
+        pairingSlotBoxes = new Image[6];
+        pairingSlotLines = new Image[6];
+        for (int i = 0; i < 6; i++)
+        {
+            float x = 60f + i * 64f + (i >= 3 ? 30f : 0f);
+            GameObject slot = UI.Node(sheet, "Casilla" + (i + 1));
+            UI.Place(slot, x, 228f, 56f, 82f);
+            pairingSlotBoxes[i] = UI.AddImage(slot, UI.Solid, UI.WithAlpha(UI.Ink, .05f));
+            GameObject line = UI.Node(slot.transform, "Linea");
+            UI.Place(line, 0f, 78f, 56f, 4f);
+            pairingSlotLines[i] = UI.AddImage(line, UI.Solid, UI.Ink);
+            pairingSlots[i] = UI.AddText(UI.Node(slot.transform, "Letra"), "", UI.Face.Display, 50f, UI.Ink, TextAlignmentOptions.Center);
+            UI.Stretch(pairingSlots[i].gameObject);
+        }
+        TMP_Text dash = UI.AddText(UI.Node(sheet, "Guion"), "-", UI.Face.Display, 40f, UI.InkSoft, TextAlignmentOptions.Center);
+        UI.Place(dash.gameObject, 60f + 3f * 64f - 6f, 228f, 30f, 82f);
+
+        pairingStatus = UI.AddText(UI.Node(sheet, "Estado"), "", UI.Face.Type, 22f, UI.AmberInk, TextAlignmentOptions.TopLeft);
+        UI.Place(pairingStatus.gameObject, 60f, 332f, 460f, 190f);
+
+        // Teclado en pantalla: en las gafas no hay teclado físico. Solo los caracteres que usa el backend (sin 0/O ni 1/I).
+        for (int i = 0; i < PairingAlphabet.Length; i++)
+        {
+            char key = PairingAlphabet[i];
+            int row = i / 8;
+            int col = i % 8;
+            PaperButton(sheet, "Tecla" + key, key.ToString(), UI.ButtonKind.Key, 560f + col * 81f, 228f + row * 76f, 72f, 66f,
+                () => TypePairingKey(key), 30f);
+        }
+
+        GameObject divider = UI.Node(sheet, "Separador");
+        UI.Place(divider, 60f, 556f, 1140f, 1.5f);
+        UI.AddImage(divider, UI.Solid, UI.WithAlpha(UI.Ink, .3f));
+
+        float x0 = 60f;
+        PaperButton(sheet, "Borrar", "Borrar", UI.ButtonKind.Secondary, x0, 582f, 137f, 68f, ErasePairingKey, 23f);
+        x0 += 155f;
+        PaperButton(sheet, "Vincular", "Vincular", UI.ButtonKind.Primary, x0, 582f, 164f, 68f, SubmitPairing, 23f);
+        x0 += 182f;
+        if (LevelSelectorEnabled)
+        {
+            const string testLabel = "Seguir sin vincular (prueba)";
+            TMP_Text test = PaperButton(sheet, "SinVincular", testLabel, UI.ButtonKind.Secondary, x0, 582f, 617f, 68f, ShowGrade, 23f);
+            test.alignment = TextAlignmentOptions.MidlineLeft;
+            test.margin = new Vector4(26f, 0f, 0f, 0f);
+            UI.DevTag(test.transform.parent, 26f + test.GetPreferredValues(testLabel, 600f, 68f).x + 16f, 34f);
+            x0 += 635f;
+        }
+        PaperButton(sheet, "Volver", "Volver", UI.ButtonKind.Secondary, x0, 582f, 137f, 68f, ShowConsent, 23f);
+        pairingPanel.SetActive(false);
+    }
+
+    private void TypePairingKey(char key)
+    {
+        if (pairingInProgress || pairingCode.Length >= 6) return;
+        pairingCode += key;
+        pairingStatus.text = "";
+        UpdatePairingCode();
+    }
+
+    private void ErasePairingKey()
+    {
+        if (pairingInProgress || pairingCode.Length == 0) return;
+        pairingCode = pairingCode.Substring(0, pairingCode.Length - 1);
+        UpdatePairingCode();
+    }
+
+    private void UpdatePairingCode()
+    {
+        for (int i = 0; i < pairingSlots.Length; i++)
+        {
+            bool next = i == pairingCode.Length;
+            pairingSlots[i].text = i < pairingCode.Length ? pairingCode[i].ToString() : "";
+            pairingSlotLines[i].color = next ? UI.SageDeep : UI.Ink;
+            pairingSlotBoxes[i].color = next ? UI.WithAlpha(UI.SageDeep, .10f) : UI.WithAlpha(UI.Ink, .05f);
+        }
+    }
+
+    // BPMN «Inicio de sesión»: validar → ¿válido? sí: entra (ajustar grado); no: mensaje de error y se vuelve a escribir.
+    private void SubmitPairing()
+    {
+        FastAPIClient api = Api();
+        if (pairingInProgress) return;
+        pairingStatus.color = UI.AmberInk;
+        if (api == null) { pairingStatus.text = "No se encontró la conexión con el servidor."; return; }
+        if (pairingCode.Length != 6) { pairingStatus.text = "El código tiene 6 caracteres. Revísalo e inténtalo de nuevo."; return; }
+        pairingInProgress = true;
+        pairingStatus.color = UI.InkSoft;
+        pairingStatus.text = "Comprobando el código…";
+        api.StartCoroutine(api.Pair(pairingCode, (ok, message) =>
+        {
+            pairingInProgress = false;
+            if (this == null || pairingPanel == null) return;
+            pairingStatus.color = ok ? UI.SageDeep : UI.AmberInk;
+            pairingStatus.text = message;
+            if (!ok) { pairingCode = ""; UpdatePairingCode(); return; }
+            api.StartCoroutine(api.RefreshContext(_ => { if (this != null) ShowGrade(); }));
+        }));
+    }
+
+    private void UpdateGradeHint()
+    {
+        if (gradeHint == null) return;
+        FastAPIClient api = Api();
+        int last = api != null ? api.LastPhobiaGrade() : 0;
+        gradeHint.text = last > 0 ? "Último grado registrado: " + last : "";
+        if (recommendationHint != null)
+            recommendationHint.text = api != null && api.Context != null ? api.Context.RecommendationText() : "";
+    }
+
+    private void UpdateDeviceStatus()
+    {
+        FastAPIClient api = Api();
+        if (deviceStatus == null) return;
+        if (api == null) { deviceStatus.text = ""; return; }
+        deviceStatus.text = (api.IsPaired ? "Visor vinculado. " : "Visor sin vincular. ") + api.SyncStatusText();
+        if (deviceButtonLabel != null) deviceButtonLabel.text = api.IsPaired ? "Cerrar sesión del visor" : "Vincular visor";
+    }
+
+    // Contexto nivel 0 «Iniciar y cerrar sesión»: el visor puede cerrar su propia sesión (revoca su token).
+    private void ToggleDeviceSession()
+    {
+        FastAPIClient api = Api();
+        if (api == null) return;
+        if (!api.IsPaired) { ShowPairing(); return; }
+        deviceStatus.text = "Cerrando la sesión del visor…";
+        api.StartCoroutine(api.Unpair(ok =>
+        {
+            if (this == null || deviceStatus == null) return;
+            UpdateDeviceStatus();
+            if (!ok) deviceStatus.text = api.PendingCount > 0
+                ? "Quedan datos por enviar al servidor. Espera a que se envíen antes de cerrar la sesión del visor."
+                : "No se pudo cerrar la sesión del visor. Revisa la conexión e inténtalo de nuevo.";
+        }));
     }
 
     private void ValidateProfile()
     {
         string name = nameInput.text.Trim();
         string email = emailInput.text.Trim();
+        profileStatus.color = UI.AmberInk;
         if (name.Length < 2 || name.Length > 80) { profileStatus.text = "Ingresa un nombre válido (2 a 80 caracteres)."; return; }
         int at = email.IndexOf('@');
         if (email.Length > 254 || at < 1 || at != email.LastIndexOf('@') || email.Contains(" ") ||
             email.LastIndexOf('.') <= at + 1 || email.EndsWith("."))
         { profileStatus.text = "Ingresa un correo electrónico válido."; return; }
+        profileStatus.color = UI.SageDeep;
         profileStatus.text = "Datos validados correctamente.";
     }
 

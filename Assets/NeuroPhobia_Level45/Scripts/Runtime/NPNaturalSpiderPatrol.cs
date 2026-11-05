@@ -29,12 +29,31 @@ namespace NeuroPhobia.Level45
         public Transform visualRoot;
         public float animationSpeed = 0.35f;
         public bool useProceduralMotionWhenNoClip = true;
+        [Tooltip("Giro (grados, eje Y) que se aplica una sola vez al objeto visual para que la cabeza del modelo mire hacia el avance. " +
+                 "Wolf Spider Rigged trae la cabeza hacia -Z local, por eso 180.")]
+        public float visualYawOffset = 180f;
+        [SerializeField, HideInInspector] private bool visualYawApplied;
+        [Tooltip("El clip «walk and turn left» desplaza el cuerpo hasta ~0,6 m del punto lógico y lo devuelve al repetir. " +
+                 "Si está activo, el desplazamiento horizontal del hueso raíz se cancela para que el cuerpo siga al objeto.")]
+        public bool cancelAnimationRootDrift = true;
+        public string animationRootBoneName = "Root";
+        private Transform animationRootBone;
 
         [Header("Suelo")]
         public float rayHeight = 1.2f;
         public float rayDistance = 3.5f;
         public float groundOffset = 0.015f;
         public LayerMask groundMask = ~0;
+
+        [Header("Obstáculos")]
+        [Tooltip("La araña se detiene ante muros y muebles en lugar de atravesarlos. Lo activa Level5CompanionSpiders; en otros niveles queda apagado.")]
+        public bool blockOnObstacles = false;
+        public float obstacleRadius = 0.18f;
+        [Tooltip("Altura (m) sobre el suelo del centro de la esfera de colisión; por encima del piso y por debajo de la mesa.")]
+        public float obstacleHeight = 0.3f;
+        public float obstacleSkin = 0.06f;
+        [Tooltip("Máximo escalón (m) que sube sin contar como obstáculo; evita que trepen a camas y sofás.")]
+        public float maxStepUp = 0.2f;
 
         [Header("Seguridad")]
         public float maximumDistanceFromRoute = 12f;
@@ -188,19 +207,148 @@ namespace NeuroPhobia.Level45
                 Vector3 step = forward.normalized * currentSpeed * Time.deltaTime;
 
                 // Cerca del punto se acerca directo para no rodearlo sin llegar.
-                transform.position = distance < 0.4f
+                Vector3 nextPosition = distance < 0.4f
                     ? Vector3.MoveTowards(
                         transform.position,
                         new Vector3(destinationTransform.position.x, transform.position.y, destinationTransform.position.z),
                         currentSpeed * Time.deltaTime)
                     : transform.position + step;
 
-                SnapToGround();
-                safePosition = transform.position;
+                if (blockOnObstacles && StepIsBlocked(nextPosition - transform.position))
+                {
+                    // Muro o mueble delante: se detiene en lugar de atravesarlo.
+                    IsBlocked = true;
+                    currentSpeed = 0f;
+                    moving = false;
+                }
+                else
+                {
+                    Vector3 previousPosition = transform.position;
+                    transform.position = nextPosition;
+                    SnapToGround();
+
+                    // No se sube a muebles, camas ni sofás: un escalón mayor que maxStepUp cuenta como obstáculo.
+                    if (blockOnObstacles && transform.position.y - previousPosition.y > maxStepUp)
+                    {
+                        transform.position = previousPosition;
+                        stableGroundY = previousPosition.y;
+                        IsBlocked = true;
+                        currentSpeed = 0f;
+                        moving = false;
+                    }
+                    else
+                    {
+                        IsBlocked = false;
+                        safePosition = transform.position;
+                    }
+                }
             }
 
             animationScale = Mathf.Clamp(currentSpeed / Mathf.Max(moveSpeed, 0.001f), 0.4f, 1.2f);
             UpdateAnimation(moving);
+        }
+
+        private void LateUpdate()
+        {
+            if (!cancelAnimationRootDrift || visualRoot == null || visualRoot.parent != transform)
+            {
+                return;
+            }
+
+            if (animationRootBone == null)
+            {
+                animationRootBone = visualRoot
+                    .GetComponentsInChildren<Transform>(true)
+                    .FirstOrDefault(candidate => candidate.name == animationRootBoneName);
+
+                if (animationRootBone == null)
+                {
+                    cancelAnimationRootDrift = false;
+                    return;
+                }
+            }
+
+            // 1) El clip hace girar el cuerpo unos ±35° mientras camina: se corrige el rumbo
+            //    para que la cabeza apunte siempre hacia donde avanza la araña.
+            if (headFrontBone == null)
+            {
+                Transform[] bones = visualRoot.GetComponentsInChildren<Transform>(true);
+                headFrontBone = bones.FirstOrDefault(candidate => candidate.name == "Fang.L");
+                abdomenBone = bones.FirstOrDefault(candidate => candidate.name == "Back");
+            }
+
+            if (headFrontBone != null && abdomenBone != null)
+            {
+                Vector3 axis = transform.InverseTransformDirection(headFrontBone.position - abdomenBone.position);
+                axis.y = 0f;
+                if (axis.sqrMagnitude > 1e-6f)
+                {
+                    float measuredYaw = Mathf.Atan2(axis.x, axis.z) * Mathf.Rad2Deg;
+                    // measuredYaw incluye la corrección ya aplicada: se resta para obtener la del clip.
+                    float rawYaw = measuredYaw - appliedYaw;
+                    appliedYaw = -rawYaw;
+                    visualRoot.localRotation = Quaternion.Euler(0f, appliedYaw, 0f) * visualBaseRotation;
+                }
+            }
+
+            // 2) El clip también desplaza el cuerpo (~0,6 m): se cancela para que siga al punto lógico.
+            Vector3 bodyOffset = transform.InverseTransformPoint(animationRootBone.position);
+            bodyOffset.y = 0f;
+            Vector3 position = visualRoot.localPosition - bodyOffset;
+            position.y = visualRoot.localPosition.y;
+            visualRoot.localPosition = position;
+        }
+
+        private Transform headFrontBone;
+        private Transform abdomenBone;
+        private float appliedYaw;
+
+        /// <summary>true cuando el último intento de avanzar chocó con un obstáculo.</summary>
+        public bool IsBlocked { get; private set; }
+
+        // Barrido de una esfera (cuerpo de la araña) en la dirección del paso. Ignora el suelo,
+        // las rampas, los triggers, a sí misma, a otras arañas y al jugador (su distancia se controla aparte).
+        private bool StepIsBlocked(Vector3 delta)
+        {
+            delta.y = 0f;
+            float length = delta.magnitude;
+            if (length < 1e-5f)
+            {
+                return false;
+            }
+
+            Vector3 origin = transform.position + Vector3.up * obstacleHeight;
+            RaycastHit[] hits = Physics.SphereCastAll(
+                origin,
+                obstacleRadius,
+                delta / length,
+                length + obstacleSkin,
+                ~0,
+                QueryTriggerInteraction.Ignore);
+
+            foreach (RaycastHit hit in hits)
+            {
+                if (hit.distance <= 0f && hit.point == Vector3.zero)
+                {
+                    continue; // ya solapaba al empezar: no se reporta un punto fiable
+                }
+
+                Transform other = hit.collider.transform;
+                if (other == transform || other.IsChildOf(transform) || hit.normal.y > 0.7f)
+                {
+                    continue;
+                }
+
+                if (other.GetComponentInParent<NPNaturalSpiderPatrol>() != null ||
+                    other.GetComponentInParent<CharacterController>() != null)
+                {
+                    continue;
+                }
+
+                return true;
+            }
+
+            return false;
         }
 
         public void PausePatrol()
@@ -269,6 +417,12 @@ namespace NeuroPhobia.Level45
                         : transform);
             }
 
+            if (visualRoot != null && !visualYawApplied)
+            {
+                visualRoot.localRotation = Quaternion.Euler(0f, visualYawOffset, 0f) * visualRoot.localRotation;
+                visualYawApplied = true;
+            }
+
             if (visualRoot != null)
             {
                 visualBasePosition = visualRoot.localPosition;
@@ -331,11 +485,12 @@ namespace NeuroPhobia.Level45
                 Vector3.down,
                 rayDistance,
                 groundMask,
-                QueryTriggerInteraction.Ignore);
+                QueryTriggerInteraction.Collide);
 
             foreach (RaycastHit hit in hits.OrderBy(candidate => candidate.distance))
             {
-                if (hit.collider == null)
+                // Los triggers solo cuentan como suelo si llevan NPWalkableSurface.
+                if (!NPWalkableSurface.IsGround(hit.collider))
                 {
                     continue;
                 }

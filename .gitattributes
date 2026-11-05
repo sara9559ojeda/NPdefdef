@@ -1,0 +1,53 @@
+# Escenas, prefabs y assets de Unity en YAML: se fusionan con la herramienta de Unity
+# (configurar una vez: git config merge.unityyamlmerge.driver "<ruta>/UnityYAMLMerge merge -p %O %B %A %A").
+# No se fuerza el final de línea para no reescribir los archivos existentes.
+*.unity    merge=unityyamlmerge
+*.prefab   merge=unityyamlmerge
+*.asset    merge=unityyamlmerge
+*.mat      merge=unityyamlmerge
+*.anim     merge=unityyamlmerge
+*.controller merge=unityyamlmerge
+*.overrideController merge=unityyamlmerge
+*.physicMaterial merge=unityyamlmerge
+*.playable merge=unityyamlmerge
+*.mask     merge=unityyamlmerge
+*.brush    merge=unityyamlmerge
+*.flare    merge=unityyamlmerge
+*.fontsettings merge=unityyamlmerge
+*.guiskin  merge=unityyamlmerge
+*.giparams merge=unityyamlmerge
+*.renderTexture merge=unityyamlmerge
+*.spriteatlas merge=unityyamlmerge
+*.terrainlayer merge=unityyamlmerge
+*.meta     merge=unityyamlmerge
+
+# Binarios: sin diferencias de texto ni conversión de finales de línea
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.tga  binary
+*.psd  binary
+*.tif  binary
+*.tiff binary
+*.exr  binary
+*.hdr  binary
+*.fbx  binary
+*.FBX  binary
+*.obj  binary
+*.blend binary
+*.wav  binary
+*.mp3  binary
+*.ogg  binary
+*.mp4  binary
+*.ttf  binary
+*.otf  binary
+*.dll  binary
+*.so   binary
+*.a    binary
+*.aar  binary
+*.jar  binary
+*.pdf  binary
+*.rtf  binary
+*.cubemap binary
+*.unitypackage binary
+*.zip  binary

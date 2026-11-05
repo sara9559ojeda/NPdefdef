@@ -6,6 +6,7 @@ using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using UnityEngine.XR.Interaction.Toolkit.UI;
 using UnityEngine.InputSystem;
+using UI = NeuroPhobiaUITheme;
 
 /// <summary>Una sola interfaz de sesión por escena jugable; no modifica las escenas XR.</summary>
 public sealed class GlobalSessionUI : MonoBehaviour
@@ -17,8 +18,12 @@ public sealed class GlobalSessionUI : MonoBehaviour
     private GameObject resultPanel;
     private GameObject summaryPanel;
     private GameObject optionsPanel;
+    private GameObject repeatPanel;
+    private TMP_Text repeatText;
     private TMP_Text resultText;
     private TMP_Text summaryText;
+    private TMP_Text syncText;
+    private FastAPIClient apiClient;
     private Button nextButton;
     private Button pauseButton;
     private InputAction pauseAction;
@@ -27,6 +32,12 @@ public sealed class GlobalSessionUI : MonoBehaviour
     private int level;
     private float sceneStart;
     private bool completed;
+    private string exitOutcome;
+    // SUDS (ansiedad 0–100) antes y después de cada intento. Mientras el panel está abierto el juego queda en pausa.
+    private GameObject sudsPanel;
+    private TMP_Text sudsTitle;
+    private System.Action<int> sudsAnswer;
+    private bool sudsBeforeAsked;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void Initialize()
@@ -56,10 +67,62 @@ public sealed class GlobalSessionUI : MonoBehaviour
         EnsureEventSystem();
         BuildCanvas();
         CreateInputActions();
+        AskSudsBefore();
+    }
+
+    private void AskSudsBefore()
+    {
+        if (sudsBeforeAsked || SessionManager.Instance == null || SessionManager.Instance.GetReport() == null) return;
+        sudsBeforeAsked = true;
+        ShowSuds("Antes de empezar", value =>
+        {
+            if (value >= 0) SessionManager.Instance.RecordSudsBefore(level, value);
+            HidePanels();
+            Time.timeScale = 1f;
+            GameStateManager.SetState(GameState.PLAYING);
+        });
+    }
+
+    /// <param name="onAnswer">Recibe 0–100, o -1 si la persona prefiere no responder.</param>
+    private void ShowSuds(string title, System.Action<int> onAnswer)
+    {
+        HidePanels();
+        sudsTitle.text = title;
+        sudsAnswer = onAnswer;
+        if (!completed) GameStateManager.SetState(GameState.PAUSED);
+        Time.timeScale = 0f;
+        DisableOtherRaycasters();
+        sudsPanel.SetActive(true);
+    }
+
+    private void AnswerSuds(int value)
+    {
+        System.Action<int> answer = sudsAnswer;
+        sudsAnswer = null;
+        sudsPanel.SetActive(false);
+        answer?.Invoke(value);
+    }
+
+    // Tras registrar el intento: pregunta el SUDS «después» si aún falta y luego continúa.
+    private void AfterSudsThen(System.Action next)
+    {
+        if (SessionManager.Instance == null || !SessionManager.Instance.AwaitingSudsAfter(level)) { next(); return; }
+        ShowSuds("Al terminar", value =>
+        {
+            SessionManager.Instance.RecordSudsAfter(level, value);
+            next();
+        });
     }
 
     private void Update()
     {
+        if (syncText != null && summaryPanel != null && summaryPanel.activeSelf)
+        {
+            if (apiClient == null) apiClient = FindFirstObjectByType<FastAPIClient>();
+            syncText.text = apiClient != null ? apiClient.SyncStatusText() : "";
+            syncText.color = SyncColor(apiClient);
+        }
+
         bool escapePressed = false;
 #if ENABLE_LEGACY_INPUT_MANAGER
         escapePressed = Input.GetKeyDown(KeyCode.Escape);
@@ -67,6 +130,14 @@ public sealed class GlobalSessionUI : MonoBehaviour
 #if ENABLE_INPUT_SYSTEM
         escapePressed |= Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame;
 #endif
+        if (sudsPanel != null && sudsPanel.activeSelf)
+        {
+            // Algunos niveles ponen el estado en PLAYING en su Start: el panel SUDS mantiene la pausa.
+            Time.timeScale = 0f;
+            if (!completed && GameStateManager.CurrentState == GameState.PLAYING) GameStateManager.SetState(GameState.PAUSED);
+            return;
+        }
+
         if (escapePressed || (pauseAction != null && pauseAction.WasPressedThisFrame()))
         {
             if (confirmPanel.activeSelf) ShowPause();
@@ -79,6 +150,11 @@ public sealed class GlobalSessionUI : MonoBehaviour
         {
             if (nextButton.interactable && nextAction.WasPressedThisFrame()) NextLevel();
             else if (menuAction.WasPressedThisFrame()) FinishAndShowSummary();
+        }
+        else if (completed && repeatPanel != null && repeatPanel.activeSelf)
+        {
+            if (nextAction.WasPressedThisFrame()) RepeatLevel();
+            else if (menuAction.WasPressedThisFrame()) EndAndMenu();
         }
     }
 
@@ -137,25 +213,67 @@ public sealed class GlobalSessionUI : MonoBehaviour
         LevelMetrics metrics = Capture(true);
         GameStateManager.SetState(GameState.LEVEL_COMPLETE);
         Time.timeScale = 0f;
-        resultText.text = "Nivel completado\nHas finalizado esta etapa de exposición.\n" + MetricsText(metrics);
+        AfterSudsThen(() => ShowResultPanel(metrics));
+    }
+
+    private void ShowResultPanel(LevelMetrics metrics)
+    {
+        HidePanels();
+        resultText.text = MetricsColumns(MetricsText(metrics));
         nextButton.interactable = NextLevelOf(level) > 0;
         pauseButton.gameObject.SetActive(false);
         DisableOtherRaycasters();
         resultPanel.SetActive(true);
     }
 
-    private LevelMetrics Capture(bool passed)
+    /// <summary>Ofrece repetir el nivel con la misma interfaz de sesión. Devuelve false si no hay interfaz para ese nivel.</summary>
+    public static bool OfferRepeat(int offeredLevel, string message)
     {
-        SessionReport existingReport = SessionManager.Instance != null ? SessionManager.Instance.GetReport() : null;
-        if (existingReport != null)
-        {
-            LevelMetrics recorded = existingReport.levelMetrics.Find(item => item.level == level);
-            if (recorded != null) return recorded;
-        }
+        if (current == null || current.level != offeredLevel || current.repeatPanel == null) return false;
+        current.ShowRepeat(message);
+        return true;
+    }
+
+    public static bool IsRepeatOffered => current != null && current.repeatPanel != null && current.repeatPanel.activeSelf;
+
+    private void ShowRepeat(string message)
+    {
+        completed = true;
+        // El intento fallido cuenta como intento: se registra ya (levelPassed = false), elija repetir o salir.
+        Capture(false);
+        GameStateManager.SetState(GameState.LEVEL_COMPLETE);
+        Time.timeScale = 0f;
+        AfterSudsThen(() => ShowRepeatPanel(message));
+    }
+
+    private void ShowRepeatPanel(string message)
+    {
+        HidePanels();
+        repeatText.text = message;
+        pauseButton.gameObject.SetActive(false);
+        DisableOtherRaycasters();
+        repeatPanel.SetActive(true);
+    }
+
+    private void RepeatLevel()
+    {
+        Capture(false);   // ya registrado en ShowRepeat; no duplica
+        if (SessionManager.Instance != null) SessionManager.Instance.RegisterLevelRetry(level);
+        Time.timeScale = 1f;
+        GameStateManager.SetState(GameState.PLAYING);
+        SceneManager.LoadScene("Nivel" + level);
+    }
+
+    private LevelMetrics Capture(bool passed, string outcome = null)
+    {
+        // Solo el intento en curso: los intentos anteriores del mismo nivel ya son otros registros.
+        LevelMetrics recorded = SessionManager.Instance != null ? SessionManager.Instance.CurrentAttemptMetrics(level) : null;
+        if (recorded != null) return recorded;
         MetricsCollector collector = FindFirstObjectByType<MetricsCollector>();
         LevelMetrics metrics = collector != null ? collector.BuildMetrics(passed) : new LevelMetrics { level = level, levelPassed = passed, proximityMin = -1f, sessionDuration = Time.realtimeSinceStartup - sceneStart };
         metrics.level = level;
         metrics.levelPassed = passed;
+        if (!string.IsNullOrEmpty(outcome)) metrics.outcome = outcome;
         if (SessionManager.Instance != null) SessionManager.Instance.AddLevelMetrics(metrics);
         return metrics;
     }
@@ -187,80 +305,140 @@ public sealed class GlobalSessionUI : MonoBehaviour
         // La pausa se abre solo con el botón del mando.
         pauseButton.gameObject.SetActive(false);
 
-        pausePanel = Panel("CanvasPause", "PAUSA", "Puedes continuar o finalizar la exposición.");
-        Button("Continuar", pausePanel.transform, "Continuar", new Vector2(0,75), new Vector2(420,62), Resume);
-        Button("Opciones", pausePanel.transform, "Opciones", new Vector2(0,-5), new Vector2(420,62), ShowOptions);
-        Button("Menu", pausePanel.transform, "Volver al menú principal", new Vector2(0,-85), new Vector2(420,62), EndAndMenu);
-        Button("Emergencia", pausePanel.transform, "Salida de emergencia", new Vector2(0,-165), new Vector2(420,62), ShowConfirm);
+        pausePanel = Panel("CanvasPause", "Pausa", "Puedes continuar o finalizar la exposición.");
+        Button("Continuar", pausePanel.transform, "Continuar", new Vector2(0,75), new Vector2(480,68), Resume, UI.ButtonKind.Primary);
+        Button("Opciones", pausePanel.transform, "Opciones", new Vector2(0,-7), new Vector2(480,68), ShowOptions);
+        Button("Menu", pausePanel.transform, "Volver al menú principal", new Vector2(0,-89), new Vector2(480,68), EndAndMenu);
+        Button("Emergencia", pausePanel.transform, "Salida de emergencia", new Vector2(0,-171), new Vector2(480,68), ShowConfirm, UI.ButtonKind.Alert);
         pausePanel.SetActive(false);
 
         confirmPanel = Panel("CanvasEmergency", "Detener exposición", "¿Deseas finalizar esta exposición y volver al menú?");
-        Button("Si", confirmPanel.transform, "Sí, finalizar", new Vector2(0,-20), new Vector2(420,62), EndAndMenu);
-        Button("No", confirmPanel.transform, "Continuar sesión", new Vector2(0,-105), new Vector2(420,62), Resume);
+        Button("Si", confirmPanel.transform, "Sí, finalizar", new Vector2(0,-20), new Vector2(480,68), EmergencyExit, UI.ButtonKind.Alert);
+        Button("No", confirmPanel.transform, "Continuar sesión", new Vector2(0,-105), new Vector2(480,68), Resume, UI.ButtonKind.Primary);
         confirmPanel.SetActive(false);
 
         optionsPanel = Panel("CanvasOptions", "Opciones / Controles", "Usa los controles existentes de movimiento e interacción.\nPuedes abrir pausa con este botón. En PC, Escape si está disponible.");
-        Button("Volver", optionsPanel.transform, "Volver", new Vector2(0,-120), new Vector2(420,62), ShowPause);
+        Button("Volver", optionsPanel.transform, "Volver", new Vector2(0,-150), new Vector2(480,68), ShowPause);
         optionsPanel.SetActive(false);
 
-        resultPanel = Panel("CanvasLevelComplete", "Nivel completado", "");
-        resultText = Label("Metricas", resultPanel.transform, "", 21, new Vector2(0,15), new Vector2(780,240));
-        nextButton = Button("Siguiente", resultPanel.transform, "Siguiente nivel", new Vector2(-205,-190), new Vector2(360,62), NextLevel);
-        Button("Menu", resultPanel.transform, "Menú principal", new Vector2(205,-190), new Vector2(360,62), FinishAndShowSummary);
-        Label("Ayuda", resultPanel.transform, "Control derecho: A = Siguiente nivel · B = Menú principal", 18, new Vector2(0,-245), new Vector2(780,30));
+        resultPanel = Panel("CanvasLevelComplete", "Nivel completado", "Has finalizado esta etapa de exposición.");
+        resultText = Label("Metricas", resultPanel.transform, "", 21, new Vector2(0,-5), new Vector2(820,250));
+        resultText.alignment = TextAlignmentOptions.TopLeft;
+        nextButton = Button("Siguiente", resultPanel.transform, "Siguiente nivel", new Vector2(-210,-200), new Vector2(400,68), NextLevel, UI.ButtonKind.Primary);
+        Button("Menu", resultPanel.transform, "Menú principal", new Vector2(210,-200), new Vector2(400,68), FinishAndShowSummary);
+        Label("Ayuda", resultPanel.transform, "Control derecho: A = Siguiente nivel · B = Menú principal", 18, new Vector2(0,-265), new Vector2(820,30), UI.Face.Type, UI.InkSoft);
         resultPanel.SetActive(false);
 
+        // Oferta de repetir el nivel (p. ej. Nivel5 con demasiados intentos de alejamiento).
+        repeatPanel = Panel("CanvasRepeat", "Repetir nivel", "");
+        repeatText = repeatPanel.transform.Find("Descripcion").GetComponent<TMP_Text>();
+        Button("Repetir", repeatPanel.transform, "Repetir nivel", new Vector2(-210,-200), new Vector2(400,68), RepeatLevel, UI.ButtonKind.Primary);
+        Button("Menu", repeatPanel.transform, "Menú principal", new Vector2(210,-200), new Vector2(400,68), EndAndMenu);
+        Label("Ayuda", repeatPanel.transform, "Control derecho: A = Repetir nivel · B = Menú principal", 18, new Vector2(0,-265), new Vector2(820,30), UI.Face.Type, UI.InkSoft);
+        repeatPanel.SetActive(false);
+
         summaryPanel = Panel("CanvasSessionSummary", "Resumen de sesión", "Datos registrados localmente");
-        summaryText = Label("Reporte", summaryPanel.transform, "", 19, new Vector2(0,10), new Vector2(780,340));
-        Button("Finalizar", summaryPanel.transform, "Finalizar", new Vector2(-205,-190), new Vector2(360,62), EndAndMenu);
-        Button("Menu", summaryPanel.transform, "Volver al menú principal", new Vector2(205,-190), new Vector2(360,62), EndAndMenu);
+        GameObject reportBox = Box("ReporteFondo", summaryPanel.transform, new Vector2(0,30), new Vector2(840,230), UI.PaperLight);
+        GameObject reportBorder = UI.Node(reportBox.transform, "Borde");
+        UI.Stretch(reportBorder);
+        UI.AddImage(reportBorder, UI.Frame, UI.WithAlpha(UI.Ink, .2f)).fillCenter = false;
+        summaryText = Label("Reporte", summaryPanel.transform, "", 19, new Vector2(0,30), new Vector2(800,210), UI.Face.Type);
+        summaryText.alignment = TextAlignmentOptions.TopLeft;
+        summaryText.overflowMode = TextOverflowModes.Ellipsis;
+        // Estado del envío al backend (BPMN «¿Almacena datos?» y secuencia «Retroalimentación guardada»).
+        syncText = Label("EnvioServidor", summaryPanel.transform, "", 20, new Vector2(0,-118), new Vector2(820,52), UI.Face.Type, UI.SageDeep);
+        Button("Finalizar", summaryPanel.transform, "Finalizar", new Vector2(-210,-210), new Vector2(400,68), EndAndMenu);
+        Button("Menu", summaryPanel.transform, "Volver al menú principal", new Vector2(210,-210), new Vector2(400,68), EndAndMenu, UI.ButtonKind.Primary);
         summaryPanel.SetActive(false);
+
+        // SUDS (Wolpe, 1969): 0 = nada de ansiedad, 100 = la máxima que puedas imaginar. Textos aprobados por Sara (2026-11-05).
+        sudsPanel = Panel("CanvasSuds", "Antes de empezar", "¿Cuánta ansiedad sientes en este momento?\n0 = nada de ansiedad · 100 = la máxima ansiedad que puedas imaginar");
+        sudsTitle = sudsPanel.transform.Find("Titulo").GetComponent<TMP_Text>();
+        for (int i = 0; i <= 10; i++)
+        {
+            int value = i * 10;
+            Button("Suds" + value, sudsPanel.transform, value.ToString(), new Vector2(-400 + i * 80, 10), new Vector2(72,72), () => AnswerSuds(value),
+                i == 0 || i == 10 ? UI.ButtonKind.Primary : UI.ButtonKind.Key);
+        }
+        Label("Extremos", sudsPanel.transform, "Nada                                                                                          Máxima", 18, new Vector2(0,-48), new Vector2(880,30), UI.Face.Type, UI.InkSoft);
+        Button("NoResponder", sudsPanel.transform, "Prefiero no responder", new Vector2(0,-160), new Vector2(480,68), () => AnswerSuds(-1));
+        Label("Ayuda", sudsPanel.transform, "Apunta con el mando y pulsa el número que mejor te describa.", 18, new Vector2(0,-245), new Vector2(820,30), UI.Face.Type, UI.InkSoft);
+        sudsPanel.SetActive(false);
     }
 
+    // Hoja de papel (estética de la maqueta aprobada) centrada en el lienzo de 1000×650.
     private GameObject Panel(string name, string title, string description)
     {
-        GameObject panel = Box(name, transform, Vector2.zero, new Vector2(860,560), new Color(.025f,.04f,.07f,.98f));
-        Label("Titulo", panel.transform, title, 36, new Vector2(0,220), new Vector2(780,65));
-        Label("Descripcion", panel.transform, description, 21, new Vector2(0,155), new Vector2(780,90));
+        GameObject panel = new GameObject(name, typeof(RectTransform));
+        panel.transform.SetParent(transform, false);
+        UI.Stretch(panel);
+        UI.Sheet(panel.transform, "Hoja", 20f, 15f, 960f, 620f);
+        Label("Titulo", panel.transform, title, 46, new Vector2(0,235), new Vector2(820,64), UI.Face.Display);
+        Label("Descripcion", panel.transform, description, 23, new Vector2(0,163), new Vector2(820,84), UI.Face.Body, UI.InkSoft);
         return panel;
     }
 
     private static GameObject Box(string name, Transform parent, Vector2 position, Vector2 size, Color color)
     {
-        GameObject box = new GameObject(name, typeof(RectTransform), typeof(Image));
+        GameObject box = new GameObject(name, typeof(RectTransform));
         box.transform.SetParent(parent, false);
         RectTransform rect = box.GetComponent<RectTransform>();
         rect.anchoredPosition = position;
         rect.sizeDelta = size;
-        box.GetComponent<Image>().color = color;
+        UI.AddImage(box, UI.Solid, color);
         return box;
     }
 
-    private static TMP_Text Label(string name, Transform parent, string value, float size, Vector2 position, Vector2 dimensions)
+    private static TMP_Text Label(string name, Transform parent, string value, float size, Vector2 position, Vector2 dimensions,
+        UI.Face face = UI.Face.Body, Color? color = null)
     {
         GameObject go = new GameObject(name, typeof(RectTransform));
         go.transform.SetParent(parent, false);
         RectTransform rect = go.GetComponent<RectTransform>();
         rect.anchoredPosition = position;
         rect.sizeDelta = dimensions;
-        TextMeshProUGUI text = go.AddComponent<TextMeshProUGUI>();
-        text.text = value;
-        text.fontSize = size;
-        text.color = Color.white;
-        text.alignment = TextAlignmentOptions.Center;
-        text.textWrappingMode = TextWrappingModes.Normal;
-        text.raycastTarget = false;
-        return text;
+        return UI.AddText(go, value, face, size, color ?? UI.Ink, TextAlignmentOptions.Center);
     }
 
-    private static Button Button(string name, Transform parent, string label, Vector2 position, Vector2 size, UnityEngine.Events.UnityAction action)
+    private static Button Button(string name, Transform parent, string label, Vector2 position, Vector2 size,
+        UnityEngine.Events.UnityAction action, UI.ButtonKind kind = UI.ButtonKind.Secondary)
     {
-        GameObject go = Box(name, parent, position, size, new Color(.08f,.45f,.47f,1f));
-        Button button = go.AddComponent<Button>();
-        button.targetGraphic = go.GetComponent<Image>();
-        button.onClick.AddListener(action);
-        Label("Texto", go.transform, label, 22, Vector2.zero, size);
+        UI.Button(parent, name, label, kind, 24f, action, out Button button);
+        RectTransform rect = button.GetComponent<RectTransform>();
+        rect.anchoredPosition = position;
+        rect.sizeDelta = size;
         return button;
+    }
+
+    // Color de la línea de envío: ámbar si falló, tinta suave si está pendiente o sin vincular, salvia si se guardó.
+    private static Color SyncColor(FastAPIClient api)
+    {
+        if (api == null) return UI.InkSoft;
+        if (api.StorageFailed) return UI.AmberInk;
+        if (!api.IsPaired || api.PendingCount > 0) return UI.InkSoft;
+        return UI.SageDeep;
+    }
+
+    // Presenta las métricas del nivel en dos columnas (mismos datos que MetricsText; solo cambia la disposición).
+    private static string MetricsColumns(string metrics)
+    {
+        string[] lines = metrics.Split('\n');
+        string[] items = lines[0].Split(new[] { " | " }, System.StringSplitOptions.None);
+        StringBuilder text = new StringBuilder();
+        for (int i = 0; i < items.Length; i += 2)
+        {
+            text.Append(Capitalize(items[i]));
+            if (i + 1 < items.Length) text.Append("<pos=52%>").Append(Capitalize(items[i + 1]));
+            text.Append('\n');
+        }
+        string soft = ColorUtility.ToHtmlStringRGB(UI.InkSoft);
+        for (int i = 1; i < lines.Length; i++) text.Append("<color=#").Append(soft).Append('>').Append(lines[i]).Append("</color>\n");
+        return text.ToString().TrimEnd('\n');
+    }
+
+    private static string Capitalize(string value)
+    {
+        return string.IsNullOrEmpty(value) ? value : char.ToUpperInvariant(value[0]) + value.Substring(1);
     }
 
     private static void EnsureEventSystem()
@@ -277,7 +455,7 @@ public sealed class GlobalSessionUI : MonoBehaviour
 
     private void ShowPause()
     {
-        if (completed) return;
+        if (completed || (sudsPanel != null && sudsPanel.activeSelf)) return;
         HidePanels();
         GameStateManager.SetState(GameState.PAUSED);
         Time.timeScale = 0f;
@@ -291,6 +469,7 @@ public sealed class GlobalSessionUI : MonoBehaviour
         pausePanel.SetActive(false);
         confirmPanel.SetActive(false);
         optionsPanel.SetActive(false);
+        if (sudsPanel != null) sudsPanel.SetActive(false);
     }
 
     private void Resume()
@@ -322,10 +501,21 @@ public sealed class GlobalSessionUI : MonoBehaviour
         else SceneManager.LoadScene("Nivel" + next);
     }
 
+    // Salida de emergencia confirmada: el nivel queda como safe_exit y la sesión se cierra por seguridad (contrato API v1).
+    private void EmergencyExit()
+    {
+        exitOutcome = DeviceRecordMapper.OutcomeSafeExit;
+        EndAndMenu();
+    }
+
     private void EndAndMenu()
     {
-        if (!completed) Capture(false);
-        if (SessionManager.Instance != null) SessionManager.Instance.EndSession();
+        // Volver al menú sin terminar el nivel = abandoned; con la salida de emergencia = safe_exit.
+        // Si se ofreció repetir, el intento fallido ya quedó registrado en ShowRepeat (criterion_not_met).
+        string outcome = exitOutcome ?? DeviceRecordMapper.OutcomeAbandoned;
+        if (!completed || IsRepeatOffered) Capture(false, outcome);
+        string endReason = !completed && outcome == DeviceRecordMapper.OutcomeSafeExit ? DeviceRecordMapper.EndSafeExit : null;
+        if (SessionManager.Instance != null) SessionManager.Instance.EndSession(endReason);
         GameStateManager.SetState(GameState.MENU);
         Time.timeScale = 1f;
         SceneManager.LoadScene("MainMenu");
@@ -348,6 +538,14 @@ public sealed class GlobalSessionUI : MonoBehaviour
             EnsureEventSystem();
             current.BuildCanvas();
         }
+        current.completed = true;
+        // Nivel5 llega aquí al terminar: antes de cerrar la sesión se pregunta el SUDS «después».
+        current.AfterSudsThen(current.FinishSummary);
+    }
+
+    private void FinishSummary()
+    {
+        GlobalSessionUI current = this;
         if (SessionManager.Instance != null) SessionManager.Instance.EndSession();
         GameStateManager.SetState(GameState.SESSION_END);
         Time.timeScale = 0f;

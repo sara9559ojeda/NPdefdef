@@ -115,6 +115,14 @@ public sealed class Level1SequentialGazeFlow : MonoBehaviour
             return;
         }
 
+        // En pausa (o respiración) no corre el tiempo de mirada, igual que en Nivel2.
+        if (GameStateManager.CurrentState != GameState.PLAYING)
+        {
+            lastValidLookTime = Time.unscaledTime;
+            UpdateProgressUI(false);
+            return;
+        }
+
         GameObject currentCard = cards[currentCardIndex];
         bool isLooking = IsLookingAtCard(currentCard);
 

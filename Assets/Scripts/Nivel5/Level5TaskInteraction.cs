@@ -17,7 +17,11 @@ public class Level5TaskInteraction : MonoBehaviour
     private Quaternion secondTargetRotation;
     private float currentHingeAngle;
     private float currentSecondHingeAngle;
+    [Tooltip("Al abrirse, el collider de interacción de este objeto deja de bloquear el paso (se activa en la puerta).")]
+    public bool clearPathWhenOpen = false;
     private bool activated;
+
+    public bool IsActivated => activated;
 
     private void Awake()
     {
@@ -53,6 +57,11 @@ public class Level5TaskInteraction : MonoBehaviour
     {
         if (activated || GameStateManager.CurrentState != GameState.PLAYING) return;
         activated = true;
+        // La puerta abierta (y la nevera) no deben bloquear el paso: se libera el collider del objeto raíz.
+        if (clearPathWhenOpen && movingPart != null)
+        {
+            foreach (Collider own in GetComponents<Collider>()) own.enabled = false;
+        }
         if (controlledLight != null) controlledLight.enabled = !controlledLight.enabled;
         if (taskManager != null) taskManager.CompleteTask(taskId);
     }

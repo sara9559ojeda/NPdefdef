@@ -1,0 +1,146 @@
+PARÁMETROS UNITY PARA INTEGRACIÓN POSTERIOR
+Proyecto: NeuroPhobia_FUNCIONAL
+
+Alcance y cautela
+Este inventario describe solo datos que aparecen en el código actual. No implementa IA ni propone/inventa variables de captura. Un campo “podría consumirse” indica compatibilidad técnica potencial como dato de entrada/etiqueta, no que exista modelo, entrenamiento, evaluación clínica o interpretación validada.
+
+Conteo: 17 campos de dominio serializados en SessionReport (5) y LevelMetrics (12). Los wrappers HTTP agregan campos de transporte y se enumeran después de la tabla, no forman parte de los 17.
+
+| Campo exacto | Tipo C# / JSON | Descripción según el código | Dónde se genera | Script que lo actualiza | Momento de registro | JSON/reporte | Backend | Uso posterior posible |
+|---|---|---|---|---|---|---|---|---|
+| sessionId | string | Identificador UUID de sesión | Guid.NewGuid en inicio de sesión | SessionManager | StartSession; copiado a reporte y cada payload | SessionReport, session start, level metrics y session end | Sí, POST start/metrics/end | Sí, vínculo/agrupación de registros |
+| phobiaGrade | int | Grado ingresado, restringido a rango 1–5 | argumento de StartSession | SessionManager | Al iniciar sesión | SessionReport y payload start | Sí, POST start | Sí, posible variable de estratificación; significado clínico no especificado aquí |
+| totalDuration | float | Duración total según reloj real (Time.realtimeSinceStartup) | resta de tiempo al inicio de sesión | SessionManager | EndSession | SessionReport; fullReport del POST end | Sí, POST end | Sí, duración/resultado descriptivo |
+| levelMetrics | List<LevelMetrics> | Métricas acumuladas por nivel | lista inicializada en SessionReport | SessionManager | AddLevelMetrics | SessionReport y fullReport | Sí, POST end | Sí, secuencia de registros por nivel |
+| timestamp | string | Hora UTC ISO-8601 del inicio y después actualizada al cierre | DateTime.UtcNow.ToString("o") | SessionManager; FastAPIClient arma copia para start | Inicio y cierre de sesión | SessionReport y start payload | Sí, POST start; en reporte POST end | Sí, marca temporal |
+| level | int | Índice de nivel | componente/escena o nivel fijado en llamada | MetricsCollector.BuildMetrics; controladores | Al construir el registro | LevelMetrics y wrapper de métricas | Sí, POST metrics/end | Sí, segmentación por nivel |
+| gazeTimeOnSpider | float | Segundos mirando hacia araña estimados por raycast | acumulador en TrackGaze; algunos niveles lo sobrescriben con requerido | MetricsCollector; p. ej. Level2GazeTimer/Level4ContactTimer | Muestreo Update; copia al completar nivel | LevelMetrics | Sí, POST metrics/end | Sí, exposición visual; cuenta aproximada, depende de collider/raycast |
+| avoidanceAttempts | int | Número de episodios de retroceso: la componente horizontal del desplazamiento del jugador en dirección opuesta a la araña más cercana alcanza `avoidanceRetreatSpeed` (0,8 m/s por defecto, Inspector). Un retroceso continuo cuenta una sola vez; el movimiento de la araña no cuenta | desplazamiento del player proyectado sobre el eje araña→player, por muestra | MetricsCollector.SampleMovement | Muestreo periódico, nominalmente cada 0.5 s | LevelMetrics | Sí, POST metrics/end | Sí, conducta espacial descriptiva; regla de código es heurística |
+| headMovementFrequency | float | Promedio del nivel de (ángulo de cabeza / intervalo / 90) por muestra; no es una frecuencia Hz calibrada | Quaternion.Angle de rotación del player, acumulado y promediado en BuildMetrics | MetricsCollector.SampleMovement | Muestreo periódico, nominalmente cada 0.5 s; 0 si no hubo muestras | LevelMetrics | Sí, POST metrics/end | Posible predictor/señal de movimiento, con validación y unidades por aclarar |
+| proximityMin | float | Menor distancia 3D entre player y spider muestreada; -1 si nunca se actualizó | Vector3.Distance en SampleMovement | MetricsCollector | Muestreo periódico | LevelMetrics | Sí, POST metrics/end | Sí, proximidad; susceptible a altura/cámara/rig |
+| taskCompletions | List<string> | IDs de tareas registradas | RegisterTaskCompletion; llamadas desde sistemas de tareas | MetricsCollector, TaskManager y task managers | Al completar tarea | LevelMetrics | Sí, POST metrics/end | Sí, secuencia/lista de eventos resumida |
+| breathingActivations | int | Número de activaciones registradas explícitamente | RegisterBreathingActivation | MetricsCollector; solo Level3AdaptiveCalmV2 llama al registro (BreathingGuide ya no suma en Start) | Cuando se activa la calma adaptativa de Nivel3 | LevelMetrics | Sí, POST metrics/end | Potencial; en Nivel1, Nivel4 y Nivel5 hoy vale 0 |
+| levelPassed | bool | Resultado pasado entregado a BuildMetrics | argumento `passed` | quien llama BuildMetrics | Al crear LevelMetrics | LevelMetrics | Sí, POST metrics/end | Sí, resultado/etiqueta operacional |
+| sessionDuration | float | Duración del nivel desde Start del collector (Time.time) | reloj de nivel | MetricsCollector.BuildMetrics | Al construir métricas | LevelMetrics | Sí, POST metrics/end | Sí, duración por nivel |
+| levelAttempts | int | Contador de intentos registrados | RegisterLevelAttempt | MetricsCollector; solo NeuroPhobiaLevel2StableGaze (Nivel2, bloqueado) llama al registro | Cuando consumidor registra intento | LevelMetrics | Sí, POST metrics/end | Potencial si se registra; puede permanecer cero |
+| handWithdrawals | int | Número de retiros de mano registrados | RegisterHandWithdrawal | MetricsCollector; no se encontró enlace de evento confirmado | Cuando consumidor registra retiro | LevelMetrics | Sí, POST metrics/end | Potencial; captura efectiva pendiente |
+| handContactDuration | float | Acumulado de segundos suministrados mediante AddHandContactTime | Register/AddHandContactTime | MetricsCollector y consumidor externo, si lo hay | Durante/después de contacto manual | LevelMetrics | Sí, POST metrics/end | Potencial; captura efectiva pendiente |
+
+Estructura JSON
+
+SessionReport:
+- sessionId: string
+- phobiaGrade: integer
+- totalDuration: number (float)
+- levelMetrics: array de LevelMetrics
+- timestamp: string ISO UTC
+
+LevelMetrics:
+- level: integer
+- gazeTimeOnSpider: number
+- avoidanceAttempts: integer
+- headMovementFrequency: number
+- proximityMin: number
+- taskCompletions: array de string
+- breathingActivations: integer
+- levelPassed: boolean
+- sessionDuration: number
+- levelAttempts: integer
+- handWithdrawals: integer
+- handContactDuration: number
+
+SessionManager serializa el reporte completo con `JsonUtility.ToJson(report, true)` a `Application.persistentDataPath/session_<SessionId>.json` al final de sesión.
+
+Transporte al backend: contrato API v1.1.0 (rama feature/unity-contrato-v1.1, 2026-11-05)
+Fuente del contrato: `NP_Back/docs/api/CONTRATO_API_v1.md`, sección 6. Todas las rutas van bajo `<servidor>/api/v1`.
+- Emparejamiento (inicio de sesión del visor, BPMN): `POST /device/pair` `{ code, deviceModel, appVersion }` -> `{ deviceId, deviceToken }`. El token se guarda en `persistentDataPath/device_credentials.json` y viaja como `Authorization: Bearer`.
+- Contexto en el Refugio (solo en MainMenu, nunca durante la exposición): `GET /device/context` -> `allowedStartLevel`, `phobiaGrade`. Copia local en `device_context.json`; sin red se usa la copia y, si no hay, Nivel1.
+- Ajustar grado de fobia (BPMN): `PUT /device/phobia-grade` `{ phobiaGrade }` al pulsar el grado; el grado también viaja en `session_start`.
+- Registros: `POST /device/records` con sobres `{ recordId, type, schemaVersion: 1, sessionId, payload }`, tipos `session_start`, `level_record` y `session_end` (`DeviceRecordMapper`).
+- Cerrar sesión del visor: `POST /device/unpair` (botón en MIS DATOS; no se permite mientras queden registros sin enviar).
+- Se retiró `GET /api/session/command/{sessionId}` (D13): `AdaptiveCommandPoller` queda inerte y se desactiva al arrancar.
+
+Correspondencia LevelMetrics -> level_record (payload)
+- level -> level; número de intento por nivel y sesión -> attempt (empieza en 1); `DeviceRecordMapper.LevelDefinitionVersion` -> levelDefinitionVersion.
+- levelPassed -> criterionMet; outcome (nuevo campo de LevelMetrics) -> outcome: completed, criterion_not_met, safe_exit (salida de emergencia) o abandoned (volver al menú desde la pausa). Vacío = completed si levelPassed, si no criterion_not_met.
+- sessionDuration -> permanenceSeconds; endedAt = momento del registro, startedAt = endedAt - permanenceSeconds.
+- proximityMin -> minDistanceM (`null` cuando vale -1, sin estímulo muestreado).
+- gazeTimeOnSpider -> gaze.onStimulusSeconds; gaze.coneDeg = 1 (rayo central de MetricsCollector, no es un cono); gazeMeanAngleDeg -> gaze.meanAngleDeg (ángulo medio cabeza-araña más cercana; null si no hubo araña muestreada).
+- avoidanceAttempts -> avoidanceCount.
+- suds -> suds: SUDS 0–100 «before» (al entrar al nivel, at = 0) y «after» (al terminar o al ofrecer repetir, at = permanenceSeconds). «Prefiero no responder» no añade entrada. La fase «during» no se pregunta. Cada respuesta también va como evento `suds`.
+- events: level_start, avoidance (con data.retreatSpeed), pause, resume, suds, safe_exit si aplica, level_end. `t` = segundos de exposición sin contar pausas (por eso pause y resume comparten t).
+- distanceSamples / angleSamples / sampleHz -> samples { hz: 2, distanceM, angleDeg } (araña más cercana, cada 0,5 s de exposición; máximo 3600 muestras).
+- extra: taskCompletions, breathingActivations, headMovementMean (= headMovementFrequency), handContactSeconds, handWithdrawals, levelAttempts.
+- session_end: endReason completed (Nivel5 superado), user_finished, safe_exit (salida de emergencia) o app_closed (OnApplicationQuit); levelReached = nivel más alto registrado; totalDurationSeconds = totalDuration.
+
+Bandeja de salida (D12)
+Cada sobre se escribe en `persistentDataPath/outbox/<deviceId>/` antes de enviarse y se borra solo con 201 stored o 200 duplicate. 409/422/400/413/403 -> `outbox_quarantine/`. 401 -> se conserva, se borra el token y la app pide un código nuevo. 429, 5xx, 503 STORAGE_UNAVAILABLE o sin red -> reintento en orden con espera creciente (2 s, 4 s, … hasta 5 min) o la indicada en Retry-After.
+Los sobres quedan ligados al emparejamiento con el que se crearon: nunca se envían con el token de otro paciente. Las sesiones sin visor vinculado (solo en Editor o builds de desarrollo) se marcan como `testSession` y se quedan en `outbox/sin_vincular/`.
+Mensajes visibles: el error de envío (BPMN «¿Almacena datos? no») aparece en el menú principal y en el resumen de sesión; el resumen muestra «Retroalimentación guardada» cuando el `session_end` vuelve con `feedback.status = saved`.
+- URL del servidor por defecto: `http://localhost:8000` (`FastAPIClient.baseUrl`, objeto con SessionManager en MainMenu); se le añade `/api/v1` si no lo trae.
+
+Cómo apuntar a un FastAPI en la LAN
+`FastAPIClient.Awake` resuelve la URL en este orden (la primera válida gana; debe empezar por http:// o https://, se quita la barra final):
+1. Archivo `backend_url.txt` en `Application.persistentDataPath` con una sola línea, p. ej. `http://192.168.1.50:8000` (con o sin `/api/v1`).
+   - Quest: `adb push backend_url.txt /sdcard/Android/data/com.neurophobia.app/files/backend_url.txt` (después reiniciar la app).
+   - PC/Editor: `%USERPROFILE%\AppData\LocalLow\NeuroPhobia\NeuroPhobia\backend_url.txt` (companyName y productName actuales).
+2. PlayerPrefs `NeuroPhobia.BackendUrl` (se puede fijar en runtime con `FastAPIClient.SetBaseUrl(url)`, que la guarda y la aplica).
+3. Valor serializado `baseUrl` del componente (Inspector).
+Al arrancar se registra en consola `NeuroPhobia: backend en <url>`.
+Requisitos de red: el servidor debe escuchar en todas las interfaces (`uvicorn main:app --host 0.0.0.0 --port 8000`), el firewall de Windows debe permitir el puerto 8000 y la Quest debe estar en la misma red. `localhost` en la Quest apunta a la propia Quest, no al PC.
+`ProjectSettings > Player > insecureHttpOption = 2` (Allow downloads over HTTP: Always allowed) permite `http://` en cualquier build; con 0 Android bloquea HTTP en claro.
+
+Comandos adaptativos (retirados)
+El contrato API v1 retira la consulta de comandos durante la exposición (D13). `AdaptiveCommandPoller` sigue en las escenas solo para no dejar «Missing Script»: se desactiva en Awake y no hace peticiones. La recomendación del backend llega por `GET /device/context` en el Refugio.
+
+A. Datos que YA EXISTEN
+Los 17 campos de la tabla y la lógica que intenta llenarlos. La calidad/actualización real varía: el código incluye varios métodos de registro cuyo consumidor no se encontró, y ciertas métricas se asignan solo al completar.
+
+B. Datos ENVIADOS al backend
+SessionManager llama a FastAPIClient (PostSessionStart, PostLevelMetrics, PostSessionEnd), que convierte los datos en sobres del contrato v1.1.0 y los envía desde la bandeja de salida. El backend guarda métricas, análisis y retroalimentación en una sola transacción al recibir `session_end`. Verificado el 2026-11-05 contra NP_Back con PostgreSQL efímero (ver registro de cambios). Falta probarlo desde el Editor y desde la Quest contra un servidor en la LAN.
+
+C. Datos que NO existen en este esquema/código inspeccionado
+No aparece salida, nombre, versión o confianza de un modelo de IA; inferencia/predicción; frecuencia cardíaca, EEG u otros sensores fisiológicos; registro crudo de trayectoria o mirada con timestamps; calibración ocular; edad/demografía; etiquetas diagnósticas; consentimiento; versión de protocolo; ni persistencia histórica/almacenamiento backend implementado aquí. No deben tratarse como existentes ni inferirse de métricas actuales.
+
+Rutas de referencia
+`Assets/Scripts/Metricas/SessionReport.cs`, `MetricsCollector.cs`, `Assets/Scripts/Control/SessionManager.cs`, `Assets/Scripts/Comunicacion/FastAPIClient.cs`, `Assets/Scripts/Control/AdaptiveCommandPoller.cs`.
+
+EL MÓDULO / MODELO DE INTELIGENCIA ARTIFICIAL NO FORMA PARTE DEL ALCANCE UNITY. Unity produce los registros (JSON local y sobres del contrato v1.1.0); el análisis lo hace el backend (`NP_Back/app/ai`). No se implementa inferencia, entrenamiento ni análisis de IA en este nodo.
+
+Nota de interfaz: GlobalSessionUI registra el nivel completado o interrumpido con MetricsCollector.BuildMetrics(passed); SessionManager evita duplicar el mismo nivel. El resumen utiliza GetReport(). La asignación grado -> nivel inicial queda pendiente de definición; todo grado inicia en Nivel1.
+
+Progresión de niveles (vigente desde 2026-10-28)
+Nivel1 -> Nivel2 -> Nivel3 -> Nivel4 -> Nivel5. El Nivel2 nuevo (antes `Nivel2Nuevo.unity`) es ahora `Assets/Scenes/Nivel2.unity`; el parque anterior quedó en `Nivel2_Parque_Anterior.unity`, fuera de Build Settings. El botón Siguiente de `GlobalSessionUI` está activo en Nivel1 a Nivel4 (`NextLevelOf`); Nivel5 cierra la sesión con `TaskManager` y `GlobalSessionUI.ShowSessionSummary`. El MainMenu carga `allowedStartLevel` del backend (Nivel1 si no hay contexto).
+
+Un MetricsCollector activo por nivel (escenas)
+- Nivel1: `LevelManagers` (sin cambios).
+- Nivel3: `Nivel3_AutoSetup` (el que referencian Level3AdaptiveCalmV2 y Level3ProgressControllerV2); se eliminó el de `LevelManagers`, que no tenía araña.
+- Nivel4: `LevelManagers` activado (MetricsCollector level 4, LevelBootstrap y AdaptiveCommandPoller); su `spider` apunta a `NP_Spider_Level4`, la araña del flujo NPLevel4Controller. `Nivel4_AutoSetup` (flujo antiguo con su propio collector) sigue inactivo.
+- Nivel5: `MetricsCollector_Nivel5` (usado por TaskManager y Level5SpawnManager, que le pasa las arañas instanciadas). `LevelManagers` activado sin su MetricsCollector, para conservar solo el poller y LevelBootstrap. `NPLevel5Controller` (flujo fábrica/orbes) deshabilitado: ya no activa `L5_Orb_1`.
+`GlobalSessionUI.Capture` usa `FindFirstObjectByType<MetricsCollector>()`; con un único collector activo por escena el resultado es determinista. Si no hay collector, el LevelMetrics de respaldo usa `proximityMin = -1`.
+
+Registro de cambios (rama feature/integracion-backend-ia)
+- MetricsCollector: headMovementFrequency = promedio del nivel; avoidanceAttempts por episodios de retroceso >= 0,8 m/s (antes exigía > 2 m en ~0,5 s, unos 4 m/s, y no se disparaba a 1,6 m/s).
+- BreathingGuide: ya no suma breathingActivations en Start (en Nivel1 sumaba 2 fijas, una por esfera).
+- GlobalSessionUI: respaldo con proximityMin = -1; progresión 1 -> 3 -> 4 -> 5.
+- FastAPIClient: URL configurable (archivo, PlayerPrefs o Inspector) y respuesta de comando tolerante a cuerpo vacío o inválido.
+- AdaptiveCommandPoller: reglas de estado descritas arriba.
+- ProjectSettings: insecureHttpOption 0 -> 2.
+- Escenas Nivel3, Nivel4 y Nivel5: collectors y poller como se describe arriba.
+Verificación: compilación de Assembly-CSharp sin errores con el Roslyn de Unity 6000.3.7f1 (el Editor tenía el proyecto abierto, así que no se pudo usar batchmode). Pendiente: Play Mode en PC y prueba en Quest contra un FastAPI real.
+
+Registro de cambios (rama feature/unity-contrato-v1.1, 2026-11-05)
+- FastAPIClient reescrito según el contrato v1.1.0: emparejamiento, contexto, grado de fobia, bandeja de salida con reintentos, cierre de sesión del visor. Archivos nuevos: `NeuroPhobiaJson.cs`, `DeviceRecordMapper.cs`, `RecordOutbox.cs` (Assets/Scripts/Comunicacion).
+- LevelMetrics: campo nuevo `outcome`. SessionManager: `EndSession(endReason)` y cierre `app_closed` al salir de la app.
+- GlobalSessionUI: la salida de emergencia registra `safe_exit`; volver al menú desde la pausa registra `abandoned`; el resumen muestra el estado del envío.
+- MainMenu: panel «Vincular visor» con teclado en pantalla tras el consentimiento; precarga del último grado; nivel inicial desde `allowedStartLevel`; botón «Cerrar sesión del visor» en MIS DATOS.
+- AdaptiveCommandPoller: retirado (inerte).
+- Pruebas EditMode: `Assets/Editor/Tests/ContratoApiV1Tests.cs`.
+Verificación: los scripts modificados compilan con el Roslyn de Unity 6000.3.25f1 (UGUI/TMP del paquete incluido; XRI e Input System con stubs de tipos). Los sobres generados por el código C# real pasan la validación de `RecordEnvelope` y de cada payload del backend, y un flujo completo contra NP_Back con PostgreSQL efímero devolvió `feedback.status = saved`, reintento `duplicate` y 401 tras cerrar la sesión del visor. Pendiente: abrir el proyecto en Unity (pruebas EditMode y Play Mode) y probar en la Quest contra un servidor en la LAN.
+
+Registro de cambios (rama feature/unity-datos-ia, 2026-11-05)
+- SUDS antes y después de cada intento en GlobalSessionUI (panel con 0, 10, …, 100 y «Prefiero no responder»; textos aprobados por Sara). El juego queda en pausa mientras el panel está abierto. No se pregunta tras la salida de emergencia ni al volver al menú desde la pausa.
+- SessionManager retiene el level_record del último intento hasta el SUDS «después» (o hasta saltarlo, cambiar de escena, repetir o cerrar la sesión) para enviarlo completo. TaskManager (Nivel5) ya no cierra la sesión antes de ese SUDS.
+- MetricsCollector: ángulo medio cabeza-araña, muestras de distancia y ángulo a 2 Hz, eventos avoidance/pause/resume.
+- MainMenu: la recomendación de `GET /device/context` se muestra en la evaluación inicial («Sugerencia tras tu última sesión: …», con «Pendiente de revisión por tu profesional» mientras clinicalStatus = pendiente_de_validar).
+Verificación: compilación con el Roslyn de Unity 6000.3.25f1; sobres validados con los modelos del backend; flujo completo contra NP_Back con PostgreSQL efímero (feedback saved); `app.ai.features.level_features` extrae del registro de Unity suds_before = 60 y suds_after = 40. Pendiente: Unity, Play Mode y Quest.
