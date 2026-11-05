@@ -12,7 +12,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 478e204ed4823d247b92cc514e2d80a1, type: 3}
   m_Name: Level5SpiderSettings
   m_EditorClassIdentifier: Assembly-CSharp::Level5SpiderSettings
-  spiderCount: 8
   minSpawnDistanceFromPlayer: 3
   minSpacingBetweenSpiders: 1.5
   randomSeed: 0

@@ -6,7 +6,7 @@ public class MetricsCollector : MonoBehaviour
     public int level = 1;
     public Transform player;
     public Transform spider;
-    private AranaController[] level5Spiders;
+    private Transform[] level5Spiders;
     public string spiderLayerName = "Spider";
     [Tooltip("Velocidad mínima (m/s) del jugador alejándose de la araña para contar un intento de alejamiento.")]
     public float avoidanceRetreatSpeed = 0.8f;
@@ -30,7 +30,8 @@ public class MetricsCollector : MonoBehaviour
     private void Start()
     {
         levelStartTime = Time.time;
-        if (SessionManager.Instance != null) levelAttempts = SessionManager.Instance.LevelRetries(level);
+        // Número de intento de este nivel en la sesión, desde 1 (como `attempt` del contrato).
+        levelAttempts = SessionManager.Instance != null ? SessionManager.Instance.CurrentAttempt(level) : 1;
         if (player == null && Camera.main != null) player = Camera.main.transform;
         if (player != null)
         {
@@ -51,7 +52,13 @@ public class MetricsCollector : MonoBehaviour
         if (!taskCompletions.Contains(taskId)) taskCompletions.Add(taskId);
     }
 
-    public void SetSpiders(AranaController[] activeSpiders) { level5Spiders = activeSpiders; }
+    public void SetSpiders(AranaController[] activeSpiders)
+    {
+        level5Spiders = activeSpiders == null ? null : System.Array.ConvertAll(activeSpiders, controller => controller != null ? controller.transform : null);
+    }
+
+    /// <summary>Arañas contra las que se miden proximidad y alejamientos (Nivel5: las arañas vivas visibles).</summary>
+    public void SetSpiders(Transform[] activeSpiders) { level5Spiders = activeSpiders; }
 
     public void RegisterBreathingActivation() { breathingActivations++; }
     public void RegisterLevelAttempt() { levelAttempts++; }
@@ -107,9 +114,9 @@ public class MetricsCollector : MonoBehaviour
         if (level5Spiders != null)
         {
             float nearestDistance = float.MaxValue;
-            foreach (AranaController candidate in level5Spiders)
+            foreach (Transform candidate in level5Spiders)
             {
-                if (candidate == null) continue;
+                if (candidate == null || !candidate.gameObject.activeInHierarchy) continue;
                 float distanceToCandidate = Vector3.Distance(player.position, candidate.transform.position);
                 if (distanceToCandidate < nearestDistance) { nearestDistance = distanceToCandidate; nearestSpider = candidate.transform; }
             }

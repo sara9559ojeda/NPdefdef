@@ -11,9 +11,12 @@ using UnityEngine.SceneManagement;
 ///   (clones de NP_Spider_Level5_*, con su misma patrulla y suelo).
 /// - Una araña vigila cada tarea (puerta, ventana, nevera, lámpara) y, según el modo de seguimiento,
 ///   puede seguir al jugador; el resto deambula.
-/// - Cantidad, distancias, seguimiento y tamaño salen de Level5SpiderSettings (pendientes de validar clínicamente).
+/// - La cantidad sigue el grado de fobia de la sesión (grado N -> N arañas; sin grado válido, 1).
+///   Distancias, seguimiento y tamaño salen de Level5SpiderSettings.
 /// - Las arañas aparecen solo en suelo alcanzable (Level5SpiderGrid) y nunca se acercan al jugador
 ///   a menos de minDistanceToPlayer.
+/// - Son las únicas arañas activas del nivel: las arañas antiguas (AranaController) se desactivan del todo
+///   y MetricsCollector mide proximidad y alejamientos contra estas.
 /// Se crea solo en Nivel5; no modifica la escena.
 /// </summary>
 public sealed class Level5CompanionSpiders : MonoBehaviour
@@ -38,6 +41,7 @@ public sealed class Level5CompanionSpiders : MonoBehaviour
     private Level5TaskInteraction door;
     private Camera playerCamera;
     private System.Random random;
+    private int requestedCount;
 
     public static Level5CompanionSpiders Instance { get; private set; }
 
@@ -45,6 +49,8 @@ public sealed class Level5CompanionSpiders : MonoBehaviour
     public bool Ready { get; private set; }
     public Level5SpiderSettings Settings => settings;
     public int SpiderCount => companions.Count;
+    /// <summary>Arañas pedidas según el grado de fobia de la sesión.</summary>
+    public int RequestedCount => requestedCount;
 
     public IEnumerable<Transform> SpiderTransforms
     {
@@ -73,6 +79,7 @@ public sealed class Level5CompanionSpiders : MonoBehaviour
     {
         settings = Level5SpiderSettings.Load();
         random = settings.randomSeed != 0 ? new System.Random(settings.randomSeed) : new System.Random();
+        requestedCount = Level5SpiderSettings.SpiderCountForGrade(SessionManager.Instance != null ? SessionManager.Instance.PhobiaGrade : 0);
 
         // Espera a que el resto de scripts del nivel creen/activen lo suyo.
         for (int i = 0; i < 5; i++) yield return null;
@@ -96,7 +103,7 @@ public sealed class Level5CompanionSpiders : MonoBehaviour
         Vector3 start = rig != null ? rig.position : Vector3.zero;
 
         DestroyStaticInfestation(all);
-        HideDeadSpiders();
+        DisableLegacySpiders();
 
         // Las arañas viven dentro del apartamento: la zona es la unión de sus pisos (NPWalkableSurface con trigger).
         Bounds? apartment = null;
@@ -120,8 +127,9 @@ public sealed class Level5CompanionSpiders : MonoBehaviour
             Create(templates[companions.Count % templates.Count], spawn);
         }
 
+        ConnectMetrics();
         Ready = true;
-        Debug.Log("NeuroPhobia: Nivel5 arañas vivas -> " + companions.Count + " (pedidas: " + settings.spiderCount + ")");
+        Debug.Log("NeuroPhobia: Nivel5 arañas vivas -> " + companions.Count + " (pedidas: " + requestedCount + ")");
     }
 
     // ---------------------------------------------------------------- colocación
@@ -155,7 +163,7 @@ public sealed class Level5CompanionSpiders : MonoBehaviour
         bool original = settings.followMode == Level5SpiderSettings.FollowMode.Original;
 
         // 1) Una que acompaña al jugador (según el modo de seguimiento).
-        if (settings.spiderCount > 0 && grid.TryNearest(start + Vector3.forward * (minSpawn + 1f), out Vector3 followerSpot, start, minSpawn))
+        if (requestedCount > 0 && grid.TryNearest(start + Vector3.forward * (minSpawn + 1f), out Vector3 followerSpot, start, minSpawn))
         {
             plan.Add(new SpiderSpawn { position = followerSpot, followsPlayer = original || allFollow, followsNearby = allNearby, leash = float.MaxValue });
             taken.Add(followerSpot);
@@ -164,7 +172,7 @@ public sealed class Level5CompanionSpiders : MonoBehaviour
         // 2) Una por tarea: puerta, ventana, nevera, lámpara.
         foreach (Vector3 target in FindTaskTargets(all))
         {
-            if (plan.Count >= settings.spiderCount) break;
+            if (plan.Count >= requestedCount) break;
             Vector3 toStart = start - target;
             toStart.y = 0f;
             Vector3 direction = toStart.sqrMagnitude > 0.01f ? toStart.normalized : Vector3.back;
@@ -182,15 +190,15 @@ public sealed class Level5CompanionSpiders : MonoBehaviour
             .ToList();
         foreach (Vector3 candidate in candidates)
         {
-            if (plan.Count >= settings.spiderCount) break;
+            if (plan.Count >= requestedCount) break;
             if (taken.Any(p => Flat(p - candidate).magnitude < settings.minSpacingBetweenSpiders)) continue;
             plan.Add(new SpiderSpawn { position = candidate, followsPlayer = allFollow, followsNearby = allNearby, leash = settings.wanderRadius * 2f });
             taken.Add(candidate);
         }
 
-        if (plan.Count < settings.spiderCount)
+        if (plan.Count < requestedCount)
         {
-            Debug.LogWarning("NeuroPhobia: Nivel5 solo encontró sitio para " + plan.Count + " de " + settings.spiderCount + " arañas.");
+            Debug.LogWarning("NeuroPhobia: Nivel5 solo encontró sitio para " + plan.Count + " de " + requestedCount + " arañas.");
         }
 
         return plan;
@@ -401,19 +409,27 @@ public sealed class Level5CompanionSpiders : MonoBehaviour
         if (infestation != null) Destroy(infestation);
     }
 
-    // Las arañas "muertas" del nivel (roam/AranaController sin animación) se ocultan y quedan en reposo.
-    private static void HideDeadSpiders()
+    // Las arañas antiguas del nivel (AranaController: CaveSpider, roam sin animación) se desactivan del todo.
+    // Solo apagar el renderer dejaba su collider: tapaba la mirada, bloqueaba a las arañas vivas y
+    // MetricsCollector medía proximidad y alejamientos contra arañas invisibles.
+    private static void DisableLegacySpiders()
     {
         foreach (AranaController spider in FindObjectsByType<AranaController>(FindObjectsInactive.Include, FindObjectsSortMode.None))
         {
             if (spider.name.StartsWith("NP_")) continue;
-
-            spider.SetMovementPattern(MovementPattern.IDLE);
-            Level5SpiderRoam roam = spider.GetComponent<Level5SpiderRoam>();
-            if (roam != null) roam.enabled = false;
-
-            foreach (Renderer renderer in spider.GetComponentsInChildren<Renderer>(true)) renderer.enabled = false;
+            spider.gameObject.SetActive(false);
         }
+    }
+
+    // MetricsCollector del nivel (el del TaskManager) mide contra exactamente las arañas visibles y activas.
+    private void ConnectMetrics()
+    {
+        TaskManager taskManager = FindFirstObjectByType<TaskManager>();
+        MetricsCollector collector = taskManager != null && taskManager.metricsCollector != null
+            ? taskManager.metricsCollector
+            : FindFirstObjectByType<MetricsCollector>();
+        if (collector != null) collector.SetSpiders(SpiderTransforms.ToArray());
+        else Debug.LogWarning("NeuroPhobia: Nivel5 sin MetricsCollector para las arañas vivas.");
     }
 
     private static Camera FindPlayerCamera()

@@ -164,6 +164,8 @@ public sealed class GlobalSessionUI : MonoBehaviour
     private void ShowRepeat(string message)
     {
         completed = true;
+        // El intento fallido cuenta como intento: se registra ya (levelPassed = false), elija repetir o salir.
+        Capture(false);
         GameStateManager.SetState(GameState.LEVEL_COMPLETE);
         Time.timeScale = 0f;
         HidePanels();
@@ -175,6 +177,7 @@ public sealed class GlobalSessionUI : MonoBehaviour
 
     private void RepeatLevel()
     {
+        Capture(false);   // ya registrado en ShowRepeat; no duplica
         if (SessionManager.Instance != null) SessionManager.Instance.RegisterLevelRetry(level);
         Time.timeScale = 1f;
         GameStateManager.SetState(GameState.PLAYING);
@@ -183,12 +186,9 @@ public sealed class GlobalSessionUI : MonoBehaviour
 
     private LevelMetrics Capture(bool passed)
     {
-        SessionReport existingReport = SessionManager.Instance != null ? SessionManager.Instance.GetReport() : null;
-        if (existingReport != null)
-        {
-            LevelMetrics recorded = existingReport.levelMetrics.Find(item => item.level == level);
-            if (recorded != null) return recorded;
-        }
+        // Solo el intento en curso: los intentos anteriores del mismo nivel ya son otros registros.
+        LevelMetrics recorded = SessionManager.Instance != null ? SessionManager.Instance.CurrentAttemptMetrics(level) : null;
+        if (recorded != null) return recorded;
         MetricsCollector collector = FindFirstObjectByType<MetricsCollector>();
         LevelMetrics metrics = collector != null ? collector.BuildMetrics(passed) : new LevelMetrics { level = level, levelPassed = passed, proximityMin = -1f, sessionDuration = Time.realtimeSinceStartup - sceneStart };
         metrics.level = level;
@@ -247,7 +247,7 @@ public sealed class GlobalSessionUI : MonoBehaviour
         Label("Ayuda", resultPanel.transform, "Control derecho: A = Siguiente nivel · B = Menú principal", 18, new Vector2(0,-245), new Vector2(780,30));
         resultPanel.SetActive(false);
 
-        // Oferta de repetir el nivel (p. ej. Nivel5 con demasiados intentos de alejamiento). Textos pendientes de aprobar por Sara.
+        // Oferta de repetir el nivel (p. ej. Nivel5 con demasiados intentos de alejamiento).
         repeatPanel = Panel("CanvasRepeat", "Repetir nivel", "");
         repeatText = repeatPanel.transform.Find("Descripcion").GetComponent<TMP_Text>();
         Button("Repetir", repeatPanel.transform, "Repetir nivel", new Vector2(-205,-190), new Vector2(360,62), RepeatLevel);

@@ -26,8 +26,36 @@ namespace NeuroPhobia.Tests
         private const string ScenePath = "Assets/Scenes/Nivel5.unity";
 
         // El Editor puede emitir errores ajenos al juego (p. ej. Package Manager sin sesión); no deben tumbar las pruebas.
+        // Grado de fobia de las pruebas: N arañas en Nivel5 (al menos 2 hacen falta para la prueba de muros y muebles).
+        private const int TestPhobiaGrade = 3;
+
         [SetUp]
-        public void IgnoreEditorNoise() { LogAssert.ignoreFailingMessages = true; }
+        public void IgnoreEditorNoise()
+        {
+            LogAssert.ignoreFailingMessages = true;
+            StartTestSession(TestPhobiaGrade);
+        }
+
+        [TearDown]
+        public void EndTestSession() { DestroySession(); }
+
+        // Sesión de prueba (testSession = true) con el grado indicado; sin FastAPIClient no envía nada.
+        private static object StartTestSession(int grade)
+        {
+            object session = Static("SessionManager", "Instance");
+            if (session == null || (UnityEngine.Object)session == null)
+            {
+                session = new GameObject("TEST_SessionManager").AddComponent(Game("SessionManager"));
+            }
+            Call(session, "StartSession", grade, true);
+            return session;
+        }
+
+        private static void DestroySession()
+        {
+            object session = Static("SessionManager", "Instance");
+            if (session != null && (UnityEngine.Object)session != null) UnityEngine.Object.DestroyImmediate(((Component)session).gameObject);
+        }
 
         // ------------------------------------------------------------------ utilidades
 
@@ -172,22 +200,57 @@ namespace NeuroPhobia.Tests
         }
 
         [UnityTest]
-        public IEnumerator Aranas_LaCantidadSaleDeLosAjustes_YRespetanLaDistanciaDeAparicion()
+        public IEnumerator Aranas_LaCantidadSigueElGradoDeFobia_YRespetanLaDistanciaDeAparicion()
         {
             yield return LoadLevel();
             yield return WaitForSpiders();
 
             object manager = Find("Level5CompanionSpiders");
-            int expected = (int)Get(Get(manager, "Settings"), "spiderCount");
             float minSpawn = (float)Get(Get(manager, "Settings"), "minSpawnDistanceFromPlayer");
             Transform[] spiders = LiveSpiders();
-            Assert.AreEqual(expected, spiders.Length, "La cantidad de arañas no coincide con Level5SpiderSettings.spiderCount.");
+            Assert.AreEqual(TestPhobiaGrade, (int)Get(manager, "RequestedCount"), "Grado " + TestPhobiaGrade + " debe pedir " + TestPhobiaGrade + " arañas.");
+            Assert.AreEqual(TestPhobiaGrade, spiders.Length, "La cantidad de arañas no coincide con el grado de fobia.");
 
             Vector3 start = Camera.main != null ? Camera.main.transform.position : Vector3.zero;
             foreach (Transform spider in spiders)
             {
                 Vector3 flat = spider.position - start; flat.y = 0f;
                 Assert.GreaterOrEqual(flat.magnitude, minSpawn - 0.6f, spider.name + " apareció demasiado cerca del jugador.");
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator Aranas_SinGradoDeFobia_ApareceUnaSola()
+        {
+            DestroySession();
+            yield return LoadLevel();
+            yield return WaitForSpiders();
+
+            Assert.AreEqual(1, (int)Get(Find("Level5CompanionSpiders"), "RequestedCount"), "Sin grado válido se usa 1 araña.");
+            Assert.AreEqual(1, LiveSpiders().Length);
+        }
+
+        // Las arañas antiguas (CaveSpider de Level5SpawnManager, AranaController) no quedan ocultas con collider,
+        // y las métricas se miden contra exactamente las arañas visibles.
+        [UnityTest]
+        public IEnumerator Aranas_SoloLasVisibles_YMetricasMidenContraEllas()
+        {
+            yield return LoadLevel();
+            yield return WaitForSpiders();
+
+            UnityEngine.Object[] legacy = UnityEngine.Object.FindObjectsByType(Game("AranaController"), FindObjectsInactive.Exclude, FindObjectsSortMode.None)
+                .Where(spider => !spider.name.StartsWith("NP_"))
+                .ToArray();
+            Assert.AreEqual(0, legacy.Length, "Quedan arañas antiguas activas: " + string.Join(", ", legacy.Select(spider => spider.name)));
+
+            object collector = Get(Find("TaskManager"), "metricsCollector");
+            Transform[] measured = (Transform[])Get(collector, "level5Spiders");
+            Assert.IsNotNull(measured, "MetricsCollector no recibió las arañas vivas.");
+            CollectionAssert.AreEquivalent(LiveSpiders(), measured, "MetricsCollector debe medir contra las arañas visibles.");
+            foreach (Transform spider in measured)
+            {
+                Assert.IsTrue(spider.gameObject.activeInHierarchy, spider.name + " no está activa.");
+                Assert.IsTrue(spider.GetComponentsInChildren<Renderer>().Any(renderer => renderer.enabled), spider.name + " no es visible.");
             }
         }
 
@@ -320,6 +383,12 @@ namespace NeuroPhobia.Tests
             Assert.IsTrue((bool)Static("GlobalSessionUI", "IsRepeatOffered"), "El panel de repetir debe estar visible.");
             Assert.AreNotEqual("SESSION_END", GameStateManagerState(), "No debe cerrarse la sesión si se superó el límite.");
 
+            // El intento fallido cuenta como intento y queda registrado antes de repetir.
+            System.Collections.IList records = LevelRecords(5);
+            Assert.AreEqual(1, records.Count, "El intento fallido debe registrarse al ofrecer repetir.");
+            Assert.IsFalse((bool)Get(records[0], "levelPassed"), "El intento fallido debe tener levelPassed = false.");
+            Assert.AreEqual(1, (int)Get(records[0], "levelAttempts"), "El primer intento es el número 1.");
+
             Button repeat = UnityEngine.Object.FindObjectsByType<Button>(FindObjectsInactive.Include, FindObjectsSortMode.None)
                 .FirstOrDefault(b => b.name == "Repetir");
             Assert.IsNotNull(repeat, "No existe el botón «Repetir nivel».");
@@ -333,6 +402,24 @@ namespace NeuroPhobia.Tests
             object freshManager = Find("TaskManager");
             Assert.AreEqual(0, (int)Get(freshManager, "CompletedCount"), "Al repetir, las tareas empiezan de cero.");
             Assert.AreEqual("PLAYING", GameStateManagerState());
+
+            // Repetir no borra el intento anterior y el nuevo intento es el número 2.
+            Assert.AreEqual(1, LevelRecords(5).Count, "Repetir no debe añadir ni borrar registros por sí solo.");
+            object freshCollector = Get(freshManager, "metricsCollector");
+            object freshMetrics = Call(freshCollector, "BuildMetrics", false);
+            Assert.AreEqual(2, (int)Get(freshMetrics, "levelAttempts"), "El intento repetido es el número 2.");
+
+            // Un segundo intento del mismo nivel se registra aparte (SessionManager acepta varios intentos).
+            Call(Static("SessionManager", "Instance"), "AddLevelMetrics", freshMetrics);
+            Assert.AreEqual(2, LevelRecords(5).Count, "El segundo intento debe registrarse como otro registro.");
+        }
+
+        private static System.Collections.IList LevelRecords(int level)
+        {
+            object session = Static("SessionManager", "Instance");
+            Assert.IsNotNull(session, "No hay SessionManager.");
+            System.Collections.IList all = (System.Collections.IList)Get(Call(session, "GetReport"), "levelMetrics");
+            return all.Cast<object>().Where(record => (int)Get(record, "level") == level).ToList();
         }
 
         // Una araña empujada contra un muro y contra un mueble se detiene ante ellos en vez de atravesarlos.

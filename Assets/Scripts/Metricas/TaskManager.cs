@@ -4,7 +4,7 @@ using UnityEngine;
 public class TaskManager : MonoBehaviour
 {
     public MetricsCollector metricsCollector;
-    [Tooltip("Límite de intentos de alejamiento. Valor heredado, sin fuente: pendiente de validar clínicamente.")]
+    [Tooltip("Límite de intentos de alejamiento (5, aprobado por Sara). Si se supera, el intento cuenta como no superado y se ofrece repetir.")]
     [Min(0)] public int maxAvoidanceAttempts = 5;
     public Level5HUD hud;
     private static readonly string[] OfficialTasks = { "TASK_LAMP", "TASK_DOOR", "TASK_FRIDGE", "TASK_WINDOW" };
