@@ -28,4 +28,7 @@ public class LevelMetrics
     public int levelAttempts;
     public int handWithdrawals;
     public float handContactDuration;
+    // Resultado según el contrato API v1 (completed, criterion_not_met, safe_exit, abandoned).
+    // Vacío = se deduce de levelPassed (ver DeviceRecordMapper.ResolveOutcome).
+    public string outcome;
 }

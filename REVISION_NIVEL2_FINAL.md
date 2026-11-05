@@ -1,5 +1,7 @@
 ﻿# Revisión final de Nivel2 — 2026-10-11
 
+> **Actualización 2026-11-05:** este documento describe el parque anterior, que ahora está en `Assets/Scenes/Nivel2_Parque_Anterior.unity` y fuera de Build Settings. Desde el 2026-10-28 `Assets/Scenes/Nivel2.unity` es el escenario nuevo (araña a 4,5 m, mirada de 20 s, sin límite de distancia). Su estado vigente está en `CHECKLIST_FINAL.md`.
+
 > **Estado vigente: PENDIENTE NIVEL2 / BLOQUEADO.** Esta revisión describe un parque recuperado de un commit antiguo y presente en la rama de trabajo. El escenario cambió, pero el nuevo no está en el repositorio oficial entregado. El parque histórico no se puede tratar como ese escenario nuevo ni como validación final de gameplay. `Nivel2.unity` no se modificó en la auditoría final. Véanse `CHECKLIST_FINAL.md` y `ESTADO_FINAL_ENTREGA.md`.
 
 ## Escena guardada

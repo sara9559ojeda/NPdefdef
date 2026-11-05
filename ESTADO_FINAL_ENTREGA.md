@@ -59,3 +59,13 @@ Fecha: 2026-10-16. Se corrigieron partes declaradas como CUMPLE que no entregaba
 - **Comandos:** `pause` solo actúa en PLAYING (se ignora en LEVEL_COMPLETE y SESSION_END) y `resume` solo desde BREATHING; un cuerpo vacío o JSON inválido se trata como `none`.
 
 Verificación: Assembly-CSharp compila sin errores con el Roslyn de Unity 6000.3.7f1. Batchmode no se pudo usar porque el Editor tenía el proyecto abierto. **PENDIENTE PC/QUEST:** Play Mode, recorrido 1 → 3 → 4 → 5 y envío real a un FastAPI en la LAN.
+
+## Contrato API v1.1.0 en Unity (rama `feature/unity-contrato-v1.1`)
+
+Fecha: 2026-11-05. Base: `origin/main` (1d217e3).
+
+- **Problema encontrado:** `FastAPIClient` enviaba a `/api/session/start`, `/metrics` y `/end` y consultaba `/api/session/command`. El backend (`NP_Back`) solo publica `/api/v1/...`, así que ningún dato llegaba a la base de datos ni a la IA, aunque el contrato y el brief decían que Unity ya lo consumía.
+- **Ahora:** vinculación del visor con código (inicio de sesión del BPMN), `GET /device/context` en el menú, `PUT /device/phobia-grade` al elegir el grado, bandeja de salida en disco con reintentos y cuarentena, sobres `session_start`, `level_record` y `session_end`, y cierre de sesión del visor. La salida de emergencia se registra como `safe_exit` y volver al menú desde la pausa como `abandoned`. El resumen de sesión muestra el estado del envío y «Retroalimentación guardada». `AdaptiveCommandPoller` queda inerte (D13).
+- **Nivel2:** el escenario nuevo ya es `Nivel2.unity` (desde el 2026-10-28) y la progresión es 1 → 2 → 3 → 4 → 5; los apartados anteriores que lo dan por bloqueado quedan superados.
+- **Verificación:** compilación de los scripts modificados con el Roslyn de Unity 6000.3.25f1; validación de los sobres con los modelos del backend; flujo completo contra NP_Back con PostgreSQL efímero (emparejar → grado → registros → `feedback.status = saved` → reintento `duplicate` → 401 tras cerrar la sesión del visor). Pruebas EditMode nuevas en `Assets/Editor/Tests/ContratoApiV1Tests.cs`, sin ejecutar todavía en Unity.
+- **Pendiente:** abrir el proyecto en Unity (está configurado para 6000.3.7f1 y en este equipo solo hay 6000.3.25f1), ejecutar las pruebas EditMode, Play Mode en PC y prueba en Quest contra un servidor en la LAN. Los textos nuevos de la interfaz (vinculación, errores de envío) necesitan la aprobación de Sara.
