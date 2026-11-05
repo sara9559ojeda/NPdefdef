@@ -51,7 +51,7 @@ public class SessionManager : MonoBehaviour
             testSession = testSession
         };
 
-        if (apiClient != null) StartCoroutine(apiClient.PostSessionStart(SessionId, PhobiaGrade));
+        if (apiClient != null) StartCoroutine(apiClient.PostSessionStart(SessionId, PhobiaGrade, testSession));
         Debug.Log($"NeuroPhobia: sesion iniciada {SessionId}");
     }
 
@@ -92,7 +92,8 @@ public class SessionManager : MonoBehaviour
         if (apiClient != null) StartCoroutine(apiClient.PostLevelMetrics(SessionId, metrics.level, metrics));
     }
 
-    public void EndSession()
+    /// <param name="endReason">Motivo del contrato API v1: completed, user_finished, safe_exit o app_closed. Null = se deduce del reporte.</param>
+    public void EndSession(string endReason = null)
     {
         if (report == null || ended) return;
 
@@ -101,8 +102,14 @@ public class SessionManager : MonoBehaviour
         ended = true;
         SaveReportLocally();
 
-        if (apiClient != null) StartCoroutine(apiClient.PostSessionEnd(SessionId, report));
+        if (apiClient != null) StartCoroutine(apiClient.PostSessionEnd(SessionId, report, endReason));
         Debug.Log("NeuroPhobia: sesion finalizada.");
+    }
+
+    // Si la app se cierra con una sesión abierta, el cierre queda en la bandeja y se envía al volver a abrirla.
+    private void OnApplicationQuit()
+    {
+        EndSession(DeviceRecordMapper.EndAppClosed);
     }
 
     public SessionReport GetReport()

@@ -30,6 +30,16 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
     private GameObject consentPanel;
     private GameObject gradePanel;
     private GameObject profilePanel;
+    // Vinculación del visor (contrato API v1, 6.1): es el «Inicio de sesión» del paciente en el BPMN.
+    private const string PairingAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    private GameObject pairingPanel;
+    private TMP_Text pairingCodeText;
+    private TMP_Text pairingStatus;
+    private string pairingCode = "";
+    private bool pairingInProgress;
+    private TMP_Text gradeHint;
+    private TMP_Text deviceStatus;
+    private TMP_Text deviceButtonLabel;
     private TMP_InputField nameInput;
     private TMP_InputField emailInput;
     private TMP_Text profileStatus;
@@ -65,6 +75,9 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
     private void Start()
     {
         RebuildMenu();
+        // Contexto del backend en el Refugio (nunca durante la exposición): grado previo y nivel permitido.
+        FastAPIClient api = Api();
+        if (api != null && api.IsPaired) api.StartCoroutine(api.RefreshContext(_ => UpdateGradeHint()));
     }
 
     public void RebuildMenu()
@@ -948,7 +961,9 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
 
         if (feedbackText != null)
         {
-            feedbackText.text = "";
+            // BPMN «¿Almacena datos? no → mensaje de error»: se avisa al volver al menú.
+            FastAPIClient api = Api();
+            feedbackText.text = api != null && api.StorageFailed ? api.LastError : "";
         }
     }
 
@@ -993,7 +1008,7 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
     private void BuildSessionPanels(Transform parent)
     {
         consentPanel = BuildSimplePanel(parent, "Consentimiento", "Bienvenido a NeuroPhobia", "Esta es una experiencia de exposición gradual en realidad virtual. Puedes pausar o detener la experiencia cuando lo necesites.");
-        CreateMenuButton(consentPanel.transform, "Aceptar", "Aceptar y continuar", new Vector2(.22f,.24f), new Vector2(.78f,.33f), Accent, Color.black, ShowGrade);
+        CreateMenuButton(consentPanel.transform, "Aceptar", "Aceptar y continuar", new Vector2(.22f,.24f), new Vector2(.78f,.33f), Accent, Color.black, AfterConsent);
         CreateMenuButton(consentPanel.transform, "Salir", "Salir", new Vector2(.22f,.12f), new Vector2(.78f,.21f), PanelSoft, Color.white, ShowMain);
 
         gradePanel = BuildSimplePanel(parent, "EvaluacionInicial", "Evaluación inicial", "¿Qué grado de miedo o fobia percibes actualmente?\n1 = menor intensidad     5 = mayor intensidad");
@@ -1004,13 +1019,22 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
             CreateMenuButton(gradePanel.transform, "Grado" + grade, grade.ToString(), new Vector2(left,.34f), new Vector2(left + .11f,.46f), AccentBlue, Color.white, () => SelectGrade(selected));
         }
         CreateMenuButton(gradePanel.transform, "Volver", "Volver", new Vector2(.30f,.14f), new Vector2(.70f,.23f), PanelSoft, Color.white, ShowConsent);
+        gradeHint = CreateText(gradePanel.transform, "UltimoGrado", "", 18f, FontStyles.Normal, TextAlignmentOptions.Center, Muted);
+        SetAnchors(gradeHint.rectTransform, new Vector2(.15f,.25f), new Vector2(.85f,.31f));
+
+        BuildPairingPanel(parent);
 
         profilePanel = BuildSimplePanel(parent, "MisDatos", "MIS DATOS", "Nombre y correo electrónico. Validación local durante esta ejecución.");
         nameInput = CreateInput(profilePanel.transform, "Nombre", .51f);
         emailInput = CreateInput(profilePanel.transform, "Correo electrónico", .40f);
         CreateMenuButton(profilePanel.transform, "Validar", "Validar", new Vector2(.18f,.26f), new Vector2(.46f,.34f), AccentBlue, Color.white, ValidateProfile);
         CreateMenuButton(profilePanel.transform, "Guardar", "Guardar cambios", new Vector2(.54f,.26f), new Vector2(.82f,.34f), Accent, Color.black, SaveProfile);
-        CreateMenuButton(profilePanel.transform, "Volver", "Volver", new Vector2(.33f,.10f), new Vector2(.67f,.18f), PanelSoft, Color.white, ShowMain);
+        CreateMenuButton(profilePanel.transform, "Volver", "Volver", new Vector2(.18f,.10f), new Vector2(.48f,.18f), PanelSoft, Color.white, ShowMain);
+        CreateMenuButton(profilePanel.transform, "Visor", "Cerrar sesión del visor", new Vector2(.52f,.10f), new Vector2(.82f,.18f), PanelSoft, Color.white, ToggleDeviceSession);
+        Transform deviceButton = profilePanel.transform.Find("Visor/Texto");
+        if (deviceButton != null) deviceButtonLabel = deviceButton.GetComponent<TMP_Text>();
+        deviceStatus = CreateText(profilePanel.transform, "EstadoVisor", "", 16f, FontStyles.Normal, TextAlignmentOptions.Center, Muted);
+        SetAnchors(deviceStatus.rectTransform, new Vector2(.12f,.02f), new Vector2(.88f,.08f));
         profileStatus = CreateText(profilePanel.transform, "EstadoValidacion", "", 17f, FontStyles.Normal, TextAlignmentOptions.Center, Color.white);
         SetAnchors(profileStatus.rectTransform, new Vector2(.15f,.19f), new Vector2(.85f,.25f));
     }
@@ -1020,6 +1044,7 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         if (consentPanel != null) consentPanel.SetActive(false);
         if (gradePanel != null) gradePanel.SetActive(false);
         if (profilePanel != null) profilePanel.SetActive(false);
+        if (pairingPanel != null) pairingPanel.SetActive(false);
     }
 
     private GameObject BuildSimplePanel(Transform parent, string name, string title, string description)
@@ -1051,8 +1076,8 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
     }
 
     public void ShowConsent() { ShowMain(); mainPanel.SetActive(false); consentPanel.SetActive(true); }
-    public void ShowGrade() { ShowMain(); mainPanel.SetActive(false); gradePanel.SetActive(true); }
-    public void ShowProfile() { ShowMain(); mainPanel.SetActive(false); profilePanel.SetActive(true); }
+    public void ShowGrade() { ShowMain(); mainPanel.SetActive(false); gradePanel.SetActive(true); UpdateGradeHint(); }
+    public void ShowProfile() { ShowMain(); mainPanel.SetActive(false); profilePanel.SetActive(true); UpdateDeviceStatus(); }
 
     private void SelectGrade(int grade)
     {
@@ -1063,12 +1088,144 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
             feedbackText.text = "No se encontró SessionManager.";
             return;
         }
-        bool testSession = LevelSelectorEnabled && selectedLevel > 0;
+        FastAPIClient api = Api();
+        // Sin visor vinculado solo se llega aquí en Editor o build de desarrollo: se marca como sesión de prueba.
+        bool testSession = (LevelSelectorEnabled && selectedLevel > 0) || (api != null && !api.IsPaired);
+        // BPMN «Ajustar grado de fobia»: el grado se guarda en el backend antes de comenzar.
+        if (api != null && api.IsPaired) api.StartCoroutine(api.PutPhobiaGrade(grade));
         SessionManager.Instance.StartSession(grade, testSession);
-        int initialLevel = testSession ? selectedLevel : SessionManager.Instance.ResolveInitialLevel(grade);
+        int initialLevel = LevelSelectorEnabled && selectedLevel > 0
+            ? selectedLevel
+            : Mathf.Max(SessionManager.Instance.ResolveInitialLevel(grade), api != null ? api.AllowedStartLevel() : 1);
         selectedLevel = 0;
         SessionManager.Instance.CurrentLevel = initialLevel;
         LoadLevel("Nivel" + initialLevel);
+    }
+
+    private static FastAPIClient Api()
+    {
+        return SessionManager.Instance != null ? SessionManager.Instance.GetComponent<FastAPIClient>() : FindFirstObjectByType<FastAPIClient>();
+    }
+
+    // Consentimiento aceptado → inicio de sesión del visor (si hace falta) → ajustar grado de fobia.
+    private void AfterConsent()
+    {
+        FastAPIClient api = Api();
+        if (api != null && !api.IsPaired) ShowPairing();
+        else ShowGrade();
+    }
+
+    private void ShowPairing()
+    {
+        ShowMain();
+        mainPanel.SetActive(false);
+        pairingCode = "";
+        pairingStatus.text = "";
+        UpdatePairingCode();
+        pairingPanel.SetActive(true);
+    }
+
+    private void BuildPairingPanel(Transform parent)
+    {
+        pairingPanel = BuildSimplePanel(parent, "VincularVisor", "Vincular visor",
+            "Escribe el código de 6 caracteres que genera la web en «Mi visor». Vale 10 minutos y solo se puede usar una vez.");
+        pairingCodeText = CreateText(pairingPanel.transform, "Codigo", "", 40f, FontStyles.Bold, TextAlignmentOptions.Center, Color.white);
+        SetAnchors(pairingCodeText.rectTransform, new Vector2(.30f,.42f), new Vector2(.70f,.50f));
+        pairingStatus = CreateText(pairingPanel.transform, "Estado", "", 17f, FontStyles.Normal, TextAlignmentOptions.Center, new Color(0.95f, 0.72f, 0.40f, 1f));
+        pairingStatus.textWrappingMode = TextWrappingModes.Normal;
+        SetAnchors(pairingStatus.rectTransform, new Vector2(.12f,.355f), new Vector2(.88f,.42f));
+
+        // Teclado en pantalla: en las gafas no hay teclado físico. Solo los caracteres que usa el backend (sin 0/O ni 1/I).
+        for (int i = 0; i < PairingAlphabet.Length; i++)
+        {
+            char key = PairingAlphabet[i];
+            int row = i / 8;
+            int col = i % 8;
+            float left = .14f + col * .09f;
+            float top = .345f - row * .065f;
+            CreateMenuButton(pairingPanel.transform, "Tecla" + key, key.ToString(), new Vector2(left, top - .055f), new Vector2(left + .085f, top), AccentBlue, Color.white, () => TypePairingKey(key));
+        }
+
+        CreateMenuButton(pairingPanel.transform, "Borrar", "Borrar", new Vector2(.10f,.02f), new Vector2(.27f,.08f), PanelSoft, Color.white, ErasePairingKey);
+        CreateMenuButton(pairingPanel.transform, "Vincular", "Vincular", new Vector2(.29f,.02f), new Vector2(.50f,.08f), Accent, Color.black, SubmitPairing);
+        if (LevelSelectorEnabled)
+            CreateMenuButton(pairingPanel.transform, "SinVincular", "Seguir sin vincular (prueba)", new Vector2(.52f,.02f), new Vector2(.71f,.08f), PanelSoft, Color.white, ShowGrade);
+        CreateMenuButton(pairingPanel.transform, "Volver", "Volver", new Vector2(.73f,.02f), new Vector2(.90f,.08f), PanelSoft, Color.white, ShowConsent);
+        pairingPanel.SetActive(false);
+    }
+
+    private void TypePairingKey(char key)
+    {
+        if (pairingInProgress || pairingCode.Length >= 6) return;
+        pairingCode += key;
+        pairingStatus.text = "";
+        UpdatePairingCode();
+    }
+
+    private void ErasePairingKey()
+    {
+        if (pairingInProgress || pairingCode.Length == 0) return;
+        pairingCode = pairingCode.Substring(0, pairingCode.Length - 1);
+        UpdatePairingCode();
+    }
+
+    private void UpdatePairingCode()
+    {
+        string shown = pairingCode.PadRight(6, '_');
+        pairingCodeText.text = shown.Substring(0, 3) + " - " + shown.Substring(3);
+    }
+
+    // BPMN «Inicio de sesión»: validar → ¿válido? sí: entra (ajustar grado); no: mensaje de error y se vuelve a escribir.
+    private void SubmitPairing()
+    {
+        FastAPIClient api = Api();
+        if (pairingInProgress) return;
+        if (api == null) { pairingStatus.text = "No se encontró la conexión con el servidor."; return; }
+        if (pairingCode.Length != 6) { pairingStatus.text = "El código tiene 6 caracteres. Revísalo e inténtalo de nuevo."; return; }
+        pairingInProgress = true;
+        pairingStatus.text = "Comprobando el código…";
+        api.StartCoroutine(api.Pair(pairingCode, (ok, message) =>
+        {
+            pairingInProgress = false;
+            if (this == null || pairingPanel == null) return;
+            pairingStatus.text = message;
+            if (!ok) { pairingCode = ""; UpdatePairingCode(); return; }
+            api.StartCoroutine(api.RefreshContext(_ => { if (this != null) ShowGrade(); }));
+        }));
+    }
+
+    private void UpdateGradeHint()
+    {
+        if (gradeHint == null) return;
+        FastAPIClient api = Api();
+        int last = api != null ? api.LastPhobiaGrade() : 0;
+        gradeHint.text = last > 0 ? "Último grado registrado: " + last : "";
+    }
+
+    private void UpdateDeviceStatus()
+    {
+        FastAPIClient api = Api();
+        if (deviceStatus == null) return;
+        if (api == null) { deviceStatus.text = ""; return; }
+        deviceStatus.text = (api.IsPaired ? "Visor vinculado. " : "Visor sin vincular. ") + api.SyncStatusText();
+        if (deviceButtonLabel != null) deviceButtonLabel.text = api.IsPaired ? "Cerrar sesión del visor" : "Vincular visor";
+    }
+
+    // Contexto nivel 0 «Iniciar y cerrar sesión»: el visor puede cerrar su propia sesión (revoca su token).
+    private void ToggleDeviceSession()
+    {
+        FastAPIClient api = Api();
+        if (api == null) return;
+        if (!api.IsPaired) { ShowPairing(); return; }
+        deviceStatus.text = "Cerrando la sesión del visor…";
+        api.StartCoroutine(api.Unpair(ok =>
+        {
+            if (this == null || deviceStatus == null) return;
+            UpdateDeviceStatus();
+            if (!ok) deviceStatus.text = api.PendingCount > 0
+                ? "Quedan datos por enviar al servidor. Espera a que se envíen antes de cerrar la sesión del visor."
+                : "No se pudo cerrar la sesión del visor. Revisa la conexión e inténtalo de nuevo.";
+        }));
     }
 
     private void ValidateProfile()

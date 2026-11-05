@@ -21,6 +21,8 @@ public sealed class GlobalSessionUI : MonoBehaviour
     private TMP_Text repeatText;
     private TMP_Text resultText;
     private TMP_Text summaryText;
+    private TMP_Text syncText;
+    private FastAPIClient apiClient;
     private Button nextButton;
     private Button pauseButton;
     private InputAction pauseAction;
@@ -29,6 +31,7 @@ public sealed class GlobalSessionUI : MonoBehaviour
     private int level;
     private float sceneStart;
     private bool completed;
+    private string exitOutcome;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void Initialize()
@@ -62,6 +65,12 @@ public sealed class GlobalSessionUI : MonoBehaviour
 
     private void Update()
     {
+        if (syncText != null && summaryPanel != null && summaryPanel.activeSelf)
+        {
+            if (apiClient == null) apiClient = FindFirstObjectByType<FastAPIClient>();
+            syncText.text = apiClient != null ? apiClient.SyncStatusText() : "";
+        }
+
         bool escapePressed = false;
 #if ENABLE_LEGACY_INPUT_MANAGER
         escapePressed = Input.GetKeyDown(KeyCode.Escape);
@@ -184,7 +193,7 @@ public sealed class GlobalSessionUI : MonoBehaviour
         SceneManager.LoadScene("Nivel" + level);
     }
 
-    private LevelMetrics Capture(bool passed)
+    private LevelMetrics Capture(bool passed, string outcome = null)
     {
         // Solo el intento en curso: los intentos anteriores del mismo nivel ya son otros registros.
         LevelMetrics recorded = SessionManager.Instance != null ? SessionManager.Instance.CurrentAttemptMetrics(level) : null;
@@ -193,6 +202,7 @@ public sealed class GlobalSessionUI : MonoBehaviour
         LevelMetrics metrics = collector != null ? collector.BuildMetrics(passed) : new LevelMetrics { level = level, levelPassed = passed, proximityMin = -1f, sessionDuration = Time.realtimeSinceStartup - sceneStart };
         metrics.level = level;
         metrics.levelPassed = passed;
+        if (!string.IsNullOrEmpty(outcome)) metrics.outcome = outcome;
         if (SessionManager.Instance != null) SessionManager.Instance.AddLevelMetrics(metrics);
         return metrics;
     }
@@ -232,7 +242,7 @@ public sealed class GlobalSessionUI : MonoBehaviour
         pausePanel.SetActive(false);
 
         confirmPanel = Panel("CanvasEmergency", "Detener exposición", "¿Deseas finalizar esta exposición y volver al menú?");
-        Button("Si", confirmPanel.transform, "Sí, finalizar", new Vector2(0,-20), new Vector2(420,62), EndAndMenu);
+        Button("Si", confirmPanel.transform, "Sí, finalizar", new Vector2(0,-20), new Vector2(420,62), EmergencyExit);
         Button("No", confirmPanel.transform, "Continuar sesión", new Vector2(0,-105), new Vector2(420,62), Resume);
         confirmPanel.SetActive(false);
 
@@ -256,7 +266,9 @@ public sealed class GlobalSessionUI : MonoBehaviour
         repeatPanel.SetActive(false);
 
         summaryPanel = Panel("CanvasSessionSummary", "Resumen de sesión", "Datos registrados localmente");
-        summaryText = Label("Reporte", summaryPanel.transform, "", 19, new Vector2(0,10), new Vector2(780,340));
+        summaryText = Label("Reporte", summaryPanel.transform, "", 19, new Vector2(0,30), new Vector2(780,300));
+        // Estado del envío al backend (BPMN «¿Almacena datos?» y secuencia «Retroalimentación guardada»).
+        syncText = Label("EnvioServidor", summaryPanel.transform, "", 17, new Vector2(0,-140), new Vector2(780,36));
         Button("Finalizar", summaryPanel.transform, "Finalizar", new Vector2(-205,-190), new Vector2(360,62), EndAndMenu);
         Button("Menu", summaryPanel.transform, "Volver al menú principal", new Vector2(205,-190), new Vector2(360,62), EndAndMenu);
         summaryPanel.SetActive(false);
@@ -367,10 +379,21 @@ public sealed class GlobalSessionUI : MonoBehaviour
         else SceneManager.LoadScene("Nivel" + next);
     }
 
+    // Salida de emergencia confirmada: el nivel queda como safe_exit y la sesión se cierra por seguridad (contrato API v1).
+    private void EmergencyExit()
+    {
+        exitOutcome = DeviceRecordMapper.OutcomeSafeExit;
+        EndAndMenu();
+    }
+
     private void EndAndMenu()
     {
-        if (!completed || IsRepeatOffered) Capture(false);
-        if (SessionManager.Instance != null) SessionManager.Instance.EndSession();
+        // Volver al menú sin terminar el nivel = abandoned; con la salida de emergencia = safe_exit.
+        // Si se ofreció repetir, el intento fallido ya quedó registrado en ShowRepeat (criterion_not_met).
+        string outcome = exitOutcome ?? DeviceRecordMapper.OutcomeAbandoned;
+        if (!completed || IsRepeatOffered) Capture(false, outcome);
+        string endReason = !completed && outcome == DeviceRecordMapper.OutcomeSafeExit ? DeviceRecordMapper.EndSafeExit : null;
+        if (SessionManager.Instance != null) SessionManager.Instance.EndSession(endReason);
         GameStateManager.SetState(GameState.MENU);
         Time.timeScale = 1f;
         SceneManager.LoadScene("MainMenu");

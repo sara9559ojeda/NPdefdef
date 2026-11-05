@@ -10,7 +10,7 @@
 - La salida de emergencia agrega métricas disponibles con `levelPassed = false`, cierra el reporte local y vuelve a MainMenu.
 - Las finalizaciones conectadas agregan métricas una sola vez por nivel. Nivel1 y Nivel4 no avanzan automáticamente a los escenarios pendientes. Nivel3 ofrece avance manual a Nivel4. Actualización 2026-10-16 (rama `feature/integracion-backend-ia`): Siguiente sigue Nivel1 → Nivel3 → Nivel4 → Nivel5; Nivel2 sigue bloqueado.
 - `SessionManager` conserva `phobiaGrade`, mide la duración total con reloj real, evita cierres y registros duplicados y expone `ResolveInitialLevel` como lugar explícito para la tabla futura de asignación. Por ahora retorna Nivel1 para todo grado válido.
-- Se conserva `FastAPIClient` y su comportamiento no bloqueante ante fallos de red.
+- Se conserva `FastAPIClient` y su comportamiento no bloqueante ante fallos de red. Actualización 2026-11-05 (rama `feature/unity-contrato-v1.1`): usa el contrato API v1.1.0 (`/api/v1/device/*`) con bandeja de salida; el MainMenu añade la vinculación del visor y `GlobalSessionUI` distingue salida de emergencia (`safe_exit`) y abandono (`abandoned`). La progresión vigente es 1 → 2 → 3 → 4 → 5.
 
 ## Scripts nuevos
 
