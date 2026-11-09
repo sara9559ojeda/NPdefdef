@@ -1,9 +1,9 @@
-> **Copia fijada de NP_Back@contrato-v1.0.0** (https://github.com/sara9559ojeda/NP_Back/blob/contrato-v1.0.0/docs/api/CONTRATO_API_v1.md). **No se edita aquí:** los cambios se aprueban y se hacen en NP_Back, y después se actualiza esta copia.
+> **Copia fijada de NP_Back@contrato-v1.1.0** (https://github.com/sara9559ojeda/NP_Back/blob/contrato-v1.1.0/docs/api/CONTRATO_API_v1.md). **No se edita aquí:** los cambios se aprueban y se hacen en NP_Back, y después se actualiza esta copia.
 
 # Contrato de la API v1 — NEUROPHOBIA
 
-- **Versión:** `contrato-v1.0.0`, aprobada por Sara María Ojeda López el 30-10-2026. Cualquier cambio necesita una nueva aprobación y una versión nueva. **Este repositorio (NP_Back) es la fuente del contrato.**
-- **Fecha:** 30-10-2026
+- **Versión:** `contrato-v1.1.0` (04-11-2026), **aprobada por Sara María Ojeda López el 09-11-2026**. Cambios compatibles hacia atrás sobre `contrato-v1.0.0` (aprobada el 30-10-2026) para cubrir los diagramas UML/BPMN; ver sección 12. Cualquier cambio necesita una nueva aprobación y una versión nueva. **Este repositorio (NP_Back) es la fuente del contrato.**
+- **Fecha:** 30-10-2026 (v1.0.0) · 04-11-2026 (v1.1.0)
 - **Partes:** app VR (Unity, Meta Quest; repo NPdefdef), backend (FastAPI + PostgreSQL; repo NP_Back) y web (React + TypeScript; repo NP_Front).
 - **Fuentes:** documento de metodología (RQF001–RQF015, RQFN001–RQFN010, HU-01 a HU-14) y decisiones de diseño aprobadas D1–D24.
 - **Decisiones incorporadas (D18–D24):** quien se registra solo queda como paciente sin profesional asignado; el registro pide nombre, correo, contraseña y aceptación; el código de vinculación del visor lo generan el paciente o su profesional; el administrador no ve datos clínicos; los cuestionarios FSQ, SUS, IPQ y SSQ quedan fuera de la v1; el plazo de conservación lo fija el asesor o el comité de ética; en desarrollo el backend corre en Docker local.
@@ -55,10 +55,13 @@
 | Recurso | anonymous | patient | professional | admin |
 |---|---|---|---|---|
 | Registro, inicio de sesión | ✅ | — | — | — |
+| Información del producto (`/public/*`, v1.1.0) | ✅ | ✅ | ✅ | ✅ |
 | `/me` (datos propios) | — | ✅ | ✅ | ✅ |
 | Códigos de emparejamiento | — | ✅ propios | ✅ de sus pacientes | — |
 | `/device/*` (visor) | — | ✅ con token de dispositivo | — | — |
 | Progreso y sesiones de un paciente | — | ✅ solo los propios | ✅ solo sus pacientes asignados | ❌ (ver nota) |
+| Estado de la terapia y grado de fobia (v1.1.0) | — | ✅ propios (web y visor) | ❌ (ve el grado en `/patients`) | ❌ |
+| Retroalimentación de IA por sesión (v1.1.0) | — | ✅ propia (en `/me/therapy` y detalle) | ✅ de sus pacientes | ❌ |
 | Notas | — | ❌ | ✅ de sus pacientes | ❌ |
 | Plan del paciente (nivel inicial permitido) | — | ❌ | ✅ de sus pacientes | — |
 | Usuarios, roles, asignaciones | — | — | — | ✅ |
@@ -69,32 +72,51 @@
 
 ---
 
-## 3. Modelo de datos (resumen)
+## 3. Modelo de datos
 
-Separación de identidad y datos clínicos (D15 de R1):
+Separación de identidad y datos clínicos (D15 de R1). Es el modelo implementado en `app/db/models.py` (migraciones en `alembic/`). Convenciones: **PK** = clave primaria, **FK** = clave foránea, **UQ** = único, `?` = admite nulo. Las fechas son `timestamptz`, los identificadores `uuid` y los `JSONB` guardan el registro completo del visor.
 
-```
-esquema identity                          esquema clinical
-───────────────                           ────────────────
-users(id, email, password_hash,           patients(pseudonym_id, allowed_start_level,
-      role, active, created_at)                    created_at)
-personal_data(user_id, full_name, …)      devices(id, pseudonym_id, model, app_version,
-consents(id, user_id, consent_version,             paired_at, revoked_at, token_hash)
-         granted_at, withdrawn_at)        sessions(id, pseudonym_id, device_id, started_at,
-identity_links(user_id, pseudonym_id)  ◄──         ended_at, phobia_grade, test_session,
-assignments(professional_user_id,                  end_reason, level_reached, raw JSONB)
-            patient_user_id, active)      level_records(id, session_id, level, attempt,
-refresh_tokens(...)                                outcome, payload JSONB)
-                                          analyses(session_id, method, method_version,
-                                                   tolerance_index, recommendation,
-                                                   basis JSONB, created_at)
-                                          notes(id, pseudonym_id, session_id NULL,
-                                                author_user_id, text, created_at, edited_at)
-```
+### 3.1 Esquema `identity` (cuentas, roles y consentimiento)
 
-- Solo la capa de servicio une `identity` y `clinical` a través de `identity_links`.
+| Tabla | Columnas | Claves |
+|---|---|---|
+| `users` | `id`, `email`, `password_hash?`, `role`, `active`, `created_at`, `updated_at?`, `withdrawn_at?` | PK `id` · UQ `email` |
+| `personal_data` | `user_id`, `full_name`, `updated_at` | PK y FK `user_id` → `users.id` (borrado en cascada) |
+| `consents` | `id`, `user_id`, `consent_version`, `granted_at`, `withdrawn_at?` | PK `id` · FK `user_id` → `users.id` |
+| `identity_links` | `user_id`, `pseudonym_id` | PK y FK `user_id` → `users.id` · UQ `pseudonym_id` (**sin FK**, ver 3.3) |
+| `assignments` | `id`, `professional_user_id`, `patient_user_id`, `active`, `created_at`, `ended_at?` | PK `id` · FK `professional_user_id` y `patient_user_id` → `users.id` · índice único de la asignación activa |
+| `refresh_tokens` | `id`, `user_id`, `family_id`, `token_hash`, `created_at`, `expires_at`, `revoked_at?` | PK `id` · FK `user_id` → `users.id` · UQ `token_hash` · `family_id` agrupa la rotación (no es FK) |
+| `rate_limit_events` | `id`, `key_hash`, `occurred_at` | PK `id` (entero) · índices por `key_hash` y por fecha. Límite de frecuencia de inicio de sesión, registro y emparejamiento; guarda solo un hash de la clave, nunca correos ni IP en claro |
+
+### 3.2 Esquema `clinical` (datos de terapia, seudonimizados)
+
+| Tabla | Columnas | Claves |
+|---|---|---|
+| `patients` | `pseudonym_id`, `allowed_start_level`, `plan_updated_at?`, `phobia_grade?`, `phobia_grade_updated_at?`, `retain_until?`, `created_at` | PK `pseudonym_id`. `retain_until` queda preparado para el plazo de conservación (D23, pendiente) |
+| `pairing_codes` | `id`, `pseudonym_id`, `code_hash`, `created_at`, `expires_at`, `used_at?` | PK `id` · FK `pseudonym_id` → `patients` · UQ `code_hash`. Código de un solo uso (10 min); se guarda solo su hash |
+| `devices` | `id`, `pseudonym_id`, `model`, `app_version`, `token_hash`, `paired_at`, `last_seen_at?`, `revoked_at?` | PK `id` · FK `pseudonym_id` → `patients` · UQ `token_hash` |
+| `sessions` | `id`, `pseudonym_id`, `device_id?`, `has_start`, `has_end`, `started_at?`, `ended_at?`, `phobia_grade?`, `test_session?`, `app_version?`, `device_model?`, `end_reason?`, `level_reached?`, `total_duration_seconds?`, `raw` (JSONB), `created_at` | PK `id` (lo genera el visor) · FK `pseudonym_id` → `patients` · FK `device_id` → `devices` (nulo si se revoca) · índice (`pseudonym_id`, `started_at`). `has_start` y `has_end` indican qué sobres han llegado, porque pueden llegar desordenados |
+| `level_records` | `id`, `session_id`, `level`, `attempt`, `outcome`, `criterion_met`, `started_at`, `ended_at`, `permanence_seconds`, `min_distance_m?`, `avoidance_count`, `payload` (JSONB), `received_at` | PK `id` (= `recordId` del visor) · FK `session_id` → `sessions` |
+| `analyses` | `session_id`, `method`, `method_version`, `tolerance_index`, `recommendation`, `basis` (JSONB), `clinical_status`, `created_at` | PK (`session_id`, `method`) · FK `session_id` → `sessions` |
+| `notes` | `id`, `pseudonym_id`, `session_id?`, `author_user_id`, `text`, `created_at`, `edited_at?` | PK `id` · FK `pseudonym_id` → `patients` · FK `session_id` → `sessions` (nulo si se borra) · `author_user_id` **sin FK** (ver 3.3) |
+| `inbound_records` | `record_id`, `pseudonym_id`, `device_id?`, `session_id`, `type`, `schema_version`, `content_hash`, `received_at` | PK `record_id` · índice `session_id` · **sin FK** (ver 3.3). Registro de idempotencia de `POST /device/records`: el mismo `recordId` con el mismo `content_hash` → `duplicate`; con otro → `409` |
+
+### 3.3 Relaciones sin clave foránea (decisión de diseño)
+
+En el diagrama entidad-relación se dibujan con **línea discontinua** y esta nota:
+
+| Relación lógica | Por qué no tiene FK |
+|---|---|
+| `identity.identity_links.pseudonym_id` → `clinical.patients.pseudonym_id` | Es el único puente entre los dos esquemas. Sin FK, `clinical` no depende de `identity`: al retirar el consentimiento se borra el vínculo y los datos clínicos quedan anónimos (Ley 1581). Solo la capa de servicio une ambos lados |
+| `clinical.notes.author_user_id` → `identity.users.id` | Cruza de `clinical` a `identity` por la misma separación. Si se borra la identidad del autor, la nota se conserva |
+| `clinical.inbound_records` → `sessions`, `devices` y `patients` | El visor puede enviar un `level_record` o un `session_end` antes que su `session_start` (sección 6.3). Una FK rechazaría esos registros; el servicio los guarda y los enlaza después |
+
+### 3.4 Reglas
+
+- Solo la capa de servicio une `identity` y `clinical`, y siempre a través de `identity_links`.
 - Los registros del visor se guardan completos en `JSONB` (`raw`, `payload`) y, además, en columnas los campos que se consultan.
-- **Retirar el consentimiento** borra `personal_data` e `identity_links`, desactiva la cuenta y deja los datos clínicos sin vínculo (anónimos). El plazo de conservación está pendiente (D23).
+- **Retirar el consentimiento** borra `personal_data` e `identity_links`, marca `users.withdrawn_at`, desactiva la cuenta y deja los datos clínicos sin vínculo (anónimos). El plazo de conservación (`patients.retain_until`) está pendiente (D23).
+- Los secretos (contraseñas, tokens de refresco, tokens de dispositivo y códigos de emparejamiento) nunca se guardan en claro: solo su hash.
 
 ---
 
@@ -139,7 +161,9 @@ refresh_tokens(...)                                outcome, payload JSONB)
 |---|---|
 | `GET /admin/users?role=&active=&q=` | Lista paginada (`id`, `fullName`, `email`, `role`, `active`). |
 | `POST /admin/users` | `{ "fullName", "email", "role", "temporaryPassword" }` → `201` |
-| `PATCH /admin/users/{userId}` | `{ "role"?, "active"? }` → `200`. `409 LAST_ADMIN` si se quita el último admin. |
+| `GET /admin/users/{userId}` | **v1.1.0.** Perfil de un usuario (mismos campos que la lista). `404` si no existe. |
+| `PATCH /admin/users/{userId}` | `{ "role"?, "active"?, "fullName"?, "email"? }` → `200`. `409 LAST_ADMIN` si se quita el último admin; `409 EMAIL_TAKEN` si el correo ya existe. `fullName` y `email` son **v1.1.0**. |
+| `PUT /admin/users/{userId}/password` | **v1.1.0.** `{ "temporaryPassword" }` → `204`. Cierra todas las sesiones web de ese usuario. |
 | `GET /admin/assignments?professionalId=` | Asignaciones profesional–paciente. |
 | `POST /admin/assignments` | `{ "professionalId", "patientId" }` → `201` |
 | `DELETE /admin/assignments/{assignmentId}` | `204` |
@@ -153,13 +177,14 @@ refresh_tokens(...)                                outcome, payload JSONB)
 
 | Ruta | Descripción |
 |---|---|
-| `GET /patients` | Pacientes asignados: `{ "patientId", "fullName", "lastSessionAt", "levelReached", "lastRecommendation" }`. |
+| `GET /patients` | Pacientes asignados: `{ "patientId", "fullName", "lastSessionAt", "levelReached", "lastRecommendation", "phobiaGrade" }` (`phobiaGrade` desde v1.1.0). |
 | `GET /patients/{patientId}/progress` | Igual que `GET /me/progress`, para ese paciente. |
 | `GET /patients/{patientId}/sessions` | Lista paginada de sesiones. |
 | `GET /patients/{patientId}/sessions/{sessionId}` | Detalle: sesión, registros por nivel, SUDS y análisis. |
 | `PUT /patients/{patientId}/plan` | `{ "allowedStartLevel": 1–5 }`. Nivel inicial permitido (HU-08, RQF009). Por defecto, 1. |
-| `GET /patients/{patientId}/notes` | Notas paginadas, más recientes primero. |
-| `POST /patients/{patientId}/notes` | `{ "text", "sessionId"? }` → `201 { "noteId", "createdAt" }`. |
+| `GET /patients/{patientId}/notes` | Notas paginadas, más recientes primero. **v1.1.0:** `?sessionId=` filtra por sesión. |
+| `POST /patients/{patientId}/notes` | `{ "text", "sessionId"? }` → `201 { "noteId", "createdAt" }`. **v1.1.0:** devuelve además `sessionId`, `authorId`, `authorName`, `text`, `editedAt` («comentario anotado»). |
+| `GET /patients/{patientId}/feedback` | **v1.1.0.** «Consultar retroalimentación»: paginado, más recientes primero. `items[]`: `{ "sessionId", "startedAt", "endedAt", "phobiaGrade", "levelReached", "endReason", "notesCount", "analysis" }` (`analysis` como en la sección 7). Solo sesiones con análisis guardado. |
 | `PATCH /patients/{patientId}/notes/{noteId}` | Solo el autor. Guarda `editedAt`. |
 
 ### 5.2 Paciente (HU-05, RQF013)
@@ -168,6 +193,8 @@ refresh_tokens(...)                                outcome, payload JSONB)
 |---|---|
 | `GET /me/progress` | `{ "sessionsCount", "levelReached", "lastSessions": [ { "sessionId", "startedAt", "levelReached", "totalDurationSeconds", "recommendation" } ] }` |
 | `GET /me/sessions` y `GET /me/sessions/{sessionId}` | Igual que en el profesional, sin notas. |
+| `GET /me/therapy` | **v1.1.0.** Estado para «Iniciar terapia»: `{ "phobiaGrade", "phobiaGradeUpdatedAt", "allowedStartLevel", "pairedDevices", "openSession": { "sessionId", "startedAt" } \| null, "lastSession", "lastFeedback": { "sessionId", "startedAt", "endedAt", "phobiaGrade", "levelReached", "endReason", "analysis" } \| null }`. |
+| `PUT /me/phobia-grade` | **v1.1.0.** «Ajustar grado de fobia»: `{ "phobiaGrade": 1–5 }` → `200 { "phobiaGrade", "updatedAt" }`. |
 
 ---
 
@@ -205,6 +232,7 @@ Con el token de dispositivo. La app lo pide **en el Refugio**, nunca durante la 
 
 - No incluye nombre ni correo.
 - Sin conexión, la app usa la última copia guardada y, si no hay ninguna, empieza en el nivel 1.
+- **v1.1.0:** añade `"phobiaGrade": 1–5 | null` y `"phobiaGradeUpdatedAt"`: el último grado de fobia autorreportado, para precargar el paso «Ajustar grado de fobia» (ejemplo `device_context.v1_1.response.200.json`).
 
 ### 6.3 Envío de registros — `POST /device/records`
 
@@ -228,6 +256,23 @@ Un único punto de entrada para la bandeja de salida (D12 de R1). Cada archivo d
 | `422 VALIDATION_ERROR` | El sobre no cumple el esquema | Cuarentena |
 | `401` | Token inválido o revocado | Conserva y pide emparejar |
 | `429`, `5xx`, sin red | Fallo temporal | Reintenta con espera creciente |
+| `503 STORAGE_UNAVAILABLE` (v1.1.0) | La base de datos no respondió; **no se guardó nada** (ni métricas ni análisis) | Muestra el mensaje de error y reintenta el mismo sobre tras `Retry-After` |
+
+**v1.1.0:** las respuestas `201`/`200` añaden dos campos opcionales (la app v1 puede ignorarlos):
+
+```json
+{
+  "status": "stored",
+  "session": { "sessionId": "…", "status": "open | closed | pending_start" },
+  "feedback": {
+    "status": "saved | pending | not_applicable | insufficient_data",
+    "recommendation": "repeat", "toleranceIndex": 0.62, "method": "rules-baseline",
+    "clinicalStatus": "pendiente_de_validar", "createdAt": "2026-10-30T21:12:01Z"
+  }
+}
+```
+
+`feedback.status`: `saved` = análisis guardado («retroalimentación guardada»); `pending` = falta el inicio o el cierre; `not_applicable` = sesión de prueba; `insufficient_data` = cerrada sin datos suficientes. Métricas, análisis y retroalimentación se guardan en **una sola transacción**: o todo o nada.
 
 - Orden: el backend acepta un `level_record` o un `session_end` aunque aún no haya llegado su `session_start` (los guarda pendientes de enlazar). La red no garantiza el orden.
 - **«Responder sin guardar» no llama a esta ruta.** Nada sale del visor.
@@ -304,6 +349,18 @@ Un único punto de entrada para la bandeja de salida (D12 de R1). Cada archivo d
 
 Al recibir `session_end`, el backend lanza el análisis (sección 7).
 
+### 6.4 Ajustar grado de fobia en el visor — `PUT /device/phobia-grade` (v1.1.0)
+
+Con el token de dispositivo, en el Refugio y antes de «Comenzar» (BPMN). `{ "phobiaGrade": 1–5 }` → `200 { "phobiaGrade", "updatedAt" }`. El `phobiaGrade` del `session_start` sigue siendo obligatorio; si es más reciente que el último ajuste, también actualiza el grado guardado.
+
+### 6.5 Estado de una sesión — `GET /device/sessions/{sessionId}` (v1.1.0)
+
+`200 { "sessionId", "status", "startedAt", "endedAt", "phobiaGrade", "levelReached", "levelsStored", "feedback" }` (`feedback` como en 6.3). `404` si la sesión no es de ese paciente. Sirve para confirmar «retroalimentación guardada» tras el `session_end`.
+
+### 6.6 Cerrar sesión en el visor — `POST /device/unpair` (v1.1.0)
+
+`204`. Revoca el propio token del visor; las siguientes llamadas responden `401 DEVICE_REVOKED` y hace falta un código nuevo.
+
 ---
 
 ## 7. Análisis de IA (HU-11, RQF012)
@@ -360,6 +417,7 @@ Formato (RFC 9457):
 | 423 | `ACCOUNT_DISABLED` | Cuenta desactivada |
 | 429 | `RATE_LIMITED` | Demasiados intentos (inicio de sesión, registro, emparejamiento) |
 | 500 | `SERVER_ERROR` | Error interno, sin detalles técnicos en la respuesta |
+| 503 | `STORAGE_UNAVAILABLE` | **v1.1.0.** La base de datos no respondió. Nada quedó guardado a medias. Cabecera `Retry-After` (segundos) |
 
 Los textos visibles de los errores en la web y en el visor son claves de texto y pasan por la aprobación de Sara.
 
@@ -369,8 +427,9 @@ Los textos visibles de los errores en la web y en el visor son claves de texto y
 
 | Ruta | Descripción |
 |---|---|
-| `GET /health` | `200 { "status": "ok", "version": "…" }`. Sin datos. |
-| Página pública (HU-14, RQF002) | Es contenido estático de la web; no necesita API. Su texto (incluido el aviso de que no sustituye un tratamiento) pasa por la aprobación de Sara. |
+| `GET /health` | `200 { "status": "ok", "version": "…" }`. Sin datos. No toca la base. |
+| `GET /health/ready` | **v1.1.0.** `200 { "status": "ok", "version", "database": "ok" }` si el servidor llega a PostgreSQL; `503 STORAGE_UNAVAILABLE` si no. |
+| `GET /public/product-info` | **v1.1.0.** Caso de uso «Visualizar información del producto», sin sesión: `{ "name", "tagline", "description", "audience", "features[]", "howItWorks[]", "requirements", "disclaimer", "contentVersion", "contentStatus", "apiVersion" }`. `contentStatus: "pendiente_de_aprobacion"` hasta que Sara apruebe el texto. La web puede seguir usando su contenido estático. |
 
 ---
 
@@ -393,3 +452,33 @@ Los textos visibles de los errores en la web y en el visor son claves de texto y
 - **Web:** tipos generados desde `openapi.json`; pruebas con un servidor simulado que devuelve los ejemplos de este documento.
 - **Unity:** pruebas EditMode de la bandeja con un servidor simulado (`tools/`) que devuelve `201`, `200 duplicate`, `409`, `422`, `401`, `429` y `500`.
 - Los ejemplos JSON de este documento se guardan como archivos en `docs/api/examples/` y la app VR, el backend y la web los usan en sus pruebas.
+
+---
+
+## 12. Cambios de `contrato-v1.1.0` (04-11-2026)
+
+**Aprobada por Sara el 09-11-2026.** En la misma versión se completa la sección 3 (modelo de datos) para que coincida con `app/db/models.py`: tablas `pairing_codes`, `inbound_records` y `rate_limit_events`, columnas que faltaban y relaciones sin clave foránea (3.3). Es documentación: no cambia ninguna ruta ni tabla.
+
+Motivo: implementar los diagramas UML/BPMN (casos de uso, secuencias de terapia y del profesional, BPMN de inicio de sesión y terapia, contexto nivel 0 y despliegue). Matriz completa en `NP_Coordinacion/informes/BACK_MATRIZ_DIAGRAMAS_2026-11-04.md`.
+
+**Compatibilidad:** ninguna ruta v1 cambia de método, ruta ni campos obligatorios. Solo se añaden rutas y campos de respuesta. La app Unity v1 sigue funcionando sin cambios.
+
+| Tipo | Ruta | Diagrama |
+|---|---|---|
+| Nueva | `GET /public/product-info` | Caso de uso «Visualizar información del producto» |
+| Nueva | `GET /health/ready` | Despliegue: Interfaz BD ⇄ PostgreSQL |
+| Nueva | `GET /me/therapy` | Caso de uso «Iniciar terapia»; contexto «Iniciar y finalizar terapia» |
+| Nueva | `PUT /me/phobia-grade`, `PUT /device/phobia-grade` | BPMN «Ajustar grado de fobia» |
+| Nueva | `GET /device/sessions/{sessionId}` | Secuencia terapia «Retroalimentación guardada» |
+| Nueva | `POST /device/unpair` | Contexto «Iniciar y cerrar sesión» (visor) |
+| Nueva | `GET /patients/{patientId}/feedback` | Secuencia profesional «Consultar retroalimentación» |
+| Nueva | `GET /admin/users/{userId}`, `PUT /admin/users/{userId}/password` | Caso de uso «Gestionar perfiles» |
+| Ampliada | `PATCH /admin/users/{userId}` (+`fullName`, `email`) | «Gestionar perfiles» |
+| Ampliada | `GET /device/context` (+`phobiaGrade`, `phobiaGradeUpdatedAt`) | BPMN «Ajustar grado de fobia» |
+| Ampliada | `POST /device/records` (+`session`, `feedback`; `503 STORAGE_UNAVAILABLE`) | Secuencia terapia; BPMN «¿Almacena datos?» |
+| Ampliada | `POST /patients/{patientId}/notes` (respuesta con la nota completa) | Secuencia profesional «Comentario anotado» |
+| Ampliada | `GET /patients/{patientId}/notes` (`?sessionId=`) | Contexto «Consultar notas agregadas» |
+| Ampliada | `GET /patients` (+`phobiaGrade`) | «Gestionar avance» |
+
+Esquema: columnas `clinical.patients.phobia_grade` (1–5, nula) y `phobia_grade_updated_at` (migración Alembic `0003`). Versión del servicio: `0.2.0`.
+Ejemplos nuevos en `docs/api/examples/`: `product_info.response.200.json`, `phobia_grade.*`, `me_therapy.response.200.json`, `device_context.v1_1.response.200.json`, `device_session.response.200.json`, `records_session_start.response.201.json`, `records_session_end.response.201.json`, `feedback.response.200.json`, `note.response.201.json` (ampliado), `admin_user_patch.request.json`, `admin_password_reset.request.json`, `health_ready.response.200.json`, `error.storage_unavailable.503.json`.
