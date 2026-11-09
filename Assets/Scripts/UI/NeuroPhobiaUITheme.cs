@@ -30,6 +30,9 @@ public static class NeuroPhobiaUITheme
     public static readonly Color AmberInk = Hex(0x7D5212);
     public static readonly Color OnAccent = Hex(0xFBF6EA);
 
+    /// <summary>Factor aplicado a todos los textos de los menús creados con AddText (base 1.3 × el ajuste de accesibilidad).</summary>
+    public static float TextScale => 1.3f * NeuroPhobiaAccessibility.TextScale;
+
     public enum Face { Display, Type, TypeBold, Body }
 
     public enum ButtonKind { Primary, Secondary, Alert, Key }
@@ -381,7 +384,11 @@ public static class NeuroPhobiaUITheme
     public static TMP_Text AddText(GameObject go, string value, Face face, float size, Color color, TextAlignmentOptions alignment)
     {
         TextMeshProUGUI text = go.AddComponent<TextMeshProUGUI>();
-        Style(text, face, size, color);
+        Style(text, face, size * TextScale, color);
+        // Letra más grande para leer en el visor; si algún texto no cabe en su caja, vuelve a su tamaño original.
+        text.enableAutoSizing = true;
+        text.fontSizeMax = size * TextScale;
+        text.fontSizeMin = size;
         text.text = value;
         text.alignment = alignment;
         text.textWrappingMode = TextWrappingModes.Normal;

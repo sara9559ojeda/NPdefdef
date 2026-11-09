@@ -19,7 +19,6 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
     private const string UiRootName = "NP_UI_Menu_Moderno";
 
     // Ajustes del menú en espacio mundo (VR / Meta Quest).
-    private const float VrCanvasDistance = 1.5f;
     private const float VrCanvasScale = 0.0012f; // 1440 px -> ~1.73 m de ancho (~60 grados de campo visual)
     private const float VrFollowSpeed = 4f;
 
@@ -31,6 +30,8 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
     private GameObject consentPanel;
     private GameObject gradePanel;
     private GameObject profilePanel;
+    private GameObject accessibilityPanel;
+    private TMP_Text[] accessibilityValues;
     // Vinculación del visor (contrato API v1, 6.1): es el «Inicio de sesión» del paciente en el BPMN.
     private const string PairingAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private GameObject pairingPanel;
@@ -118,6 +119,7 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         BuildMainPanel(uiRoot.transform);
         BuildLevelsPanel(uiRoot.transform);
         BuildInstructionsPanel(uiRoot.transform);
+        BuildAccessibilityPanel(uiRoot.transform);
         BuildSessionPanels(uiRoot.transform);
 
         if (vrCanvasTransform != null)
@@ -169,7 +171,7 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         }
         forward.Normalize();
 
-        Vector3 targetPos = cam.transform.position + forward * VrCanvasDistance;
+        Vector3 targetPos = cam.transform.position + forward * NeuroPhobiaAccessibility.MenuDistance;
         Quaternion targetRot = Quaternion.LookRotation(forward, Vector3.up);
 
         if (snap)
@@ -238,17 +240,18 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
 
         // Menú vertical: la opción apuntada se ilumina y lleva una marca de tinta.
         GameObject list = UI.Node(mainPanel.transform, "Opciones");
-        UI.Place(list, 120f, 432f, 620f, 360f);
+        UI.Place(list, 120f, 432f, 620f, 372f);
         float y = 0f;
         NeuroPhobiaMenuItem first = MenuItem(list.transform, "Iniciar", "Iniciar experiencia", ref y, StartExperience, false);
         if (LevelSelectorEnabled) MenuItem(list.transform, "SeleccionarNivel", "Elegir nivel", ref y, ShowLevels, true);
         MenuItem(list.transform, "ElegirNivel", "Mis datos", ref y, ShowProfile, false);
         MenuItem(list.transform, "Instrucciones", "Controles e instrucciones", ref y, ShowInstructions, false);
+        MenuItem(list.transform, "Accesibilidad", "Accesibilidad", ref y, ShowAccessibility, false);
         MenuItem(list.transform, "Salir", "Salir", ref y, QuitGame, false);
         first.Activate();
 
         feedbackText = UI.AddText(UI.Node(mainPanel.transform, "Estado"), "", UI.Face.Type, 21f, UI.Amber, TextAlignmentOptions.TopLeft);
-        UI.Place(feedbackText.gameObject, 120f, 792f, 640f, 70f);
+        UI.Place(feedbackText.gameObject, 120f, 810f, 640f, 70f);
 
         // Nota «Tu recorrido» clavada en el tablero.
         GameObject routeShadow = UI.Node(mainPanel.transform, "RutaSombra");
@@ -290,8 +293,8 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         UnityEngine.Events.UnityAction action, bool devOnly)
     {
         GameObject item = UI.Node(parent, name);
-        UI.Place(item, 0f, y, 620f, 64f);
-        y += 68f;
+        UI.Place(item, 0f, y, 620f, 58f);
+        y += 62f;
         Image glow = UI.AddImage(item, UI.Solid, UI.WithAlpha(UI.Sage, 0f), true);
         Button button = item.AddComponent<Button>();
         button.targetGraphic = glow;
@@ -299,13 +302,13 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         button.onClick.AddListener(action);
 
         GameObject inkGo = UI.Node(item.transform, "Tinta");
-        UI.Place(inkGo, 4f, 19f, 36f, 26f);
+        UI.Place(inkGo, 4f, 16f, 36f, 26f);
         Image inkMark = UI.AddImage(inkGo, UI.InkMark, UI.WithAlpha(UI.Sage, 0f));
 
         TMP_Text text = UI.AddText(UI.Node(item.transform, "Texto"), label, UI.Face.Type, 30f, UI.Sepia, TextAlignmentOptions.MidlineLeft);
         text.textWrappingMode = TextWrappingModes.NoWrap;
-        UI.Place(text.gameObject, 50f, 0f, 560f, 64f);
-        if (devOnly) UI.DevTag(item.transform, 50f + text.GetPreferredValues(label, 560f, 64f).x + 16f, 32f);
+        UI.Place(text.gameObject, 50f, 0f, 560f, 58f);
+        if (devOnly) UI.DevTag(item.transform, 50f + text.GetPreferredValues(label, 560f, 58f).x + 16f, 29f);
 
         NeuroPhobiaMenuItem menuItem = item.AddComponent<NeuroPhobiaMenuItem>();
         menuItem.Setup(inkMark, glow, text);
@@ -367,6 +370,88 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         }
 
         PaperButton(sheet, "Volver", "Volver", UI.ButtonKind.Secondary, 50f, 544f, 156f, 68f, ShowMain);
+    }
+
+    private static readonly NeuroPhobiaAccessibility.Setting[] AccessibilityRows =
+    {
+        NeuroPhobiaAccessibility.Setting.TextSize,
+        NeuroPhobiaAccessibility.Setting.PlayerSize,
+        NeuroPhobiaAccessibility.Setting.MoveSpeed,
+        NeuroPhobiaAccessibility.Setting.TurnAngle,
+        NeuroPhobiaAccessibility.Setting.MenuDistance
+    };
+
+    private static readonly string[] AccessibilityNames =
+    {
+        "Tamaño de la letra", "Tamaño del personaje", "Velocidad de movimiento", "Giro con el stick derecho", "Distancia del menú"
+    };
+
+    private void BuildAccessibilityPanel(Transform parent)
+    {
+        accessibilityPanel = BuildScreen(parent, "PanelAccesibilidad", "Accesibilidad", 210f, 100f, 1020f, 730f,
+            "Accesibilidad", "Ajusta la experiencia a tu comodidad. Los cambios se guardan en este visor.", 40f, out Transform sheet);
+
+        accessibilityValues = new TMP_Text[AccessibilityRows.Length];
+        for (int i = 0; i < AccessibilityRows.Length; i++)
+        {
+            NeuroPhobiaAccessibility.Setting setting = AccessibilityRows[i];
+            float y = 200f + i * 82f;
+            TMP_Text name = UI.AddText(UI.Node(sheet, "Ajuste" + i), AccessibilityNames[i], UI.Face.Body, 25f, UI.Ink, TextAlignmentOptions.MidlineLeft);
+            UI.Place(name.gameObject, 60f, y, 430f, 66f);
+            PaperButton(sheet, "Menos" + i, "-", UI.ButtonKind.Key, 500f, y, 70f, 66f, () => ChangeAccessibility(setting, -1), 30f);
+            accessibilityValues[i] = UI.AddText(UI.Node(sheet, "Valor" + i), "", UI.Face.TypeBold, 25f, UI.SageDeep, TextAlignmentOptions.Center);
+            UI.Place(accessibilityValues[i].gameObject, 578f, y, 244f, 66f);
+            PaperButton(sheet, "Mas" + i, "+", UI.ButtonKind.Key, 830f, y, 70f, 66f, () => ChangeAccessibility(setting, 1), 30f);
+        }
+
+        PaperButton(sheet, "Restablecer", "Restablecer", UI.ButtonKind.Secondary, 60f, 640f, 280f, 68f, ResetAccessibility);
+        PaperButton(sheet, "Volver", "Volver al menú", UI.ButtonKind.Primary, 620f, 640f, 280f, 68f, ShowMain);
+        RefreshAccessibility();
+    }
+
+    private void RefreshAccessibility()
+    {
+        if (accessibilityValues == null) return;
+        for (int i = 0; i < accessibilityValues.Length; i++)
+        {
+            if (accessibilityValues[i] != null)
+                accessibilityValues[i].text = NeuroPhobiaAccessibility.Label(AccessibilityRows[i]);
+        }
+    }
+
+    // El tamaño de letra cambia los textos del propio menú, así que se reconstruye y se vuelve a esta pantalla.
+    private void ChangeAccessibility(NeuroPhobiaAccessibility.Setting setting, int direction)
+    {
+        NeuroPhobiaAccessibility.Step(setting, direction);
+        AfterAccessibilityChange(setting == NeuroPhobiaAccessibility.Setting.TextSize);
+    }
+
+    private void ResetAccessibility()
+    {
+        NeuroPhobiaAccessibility.ResetAll();
+        AfterAccessibilityChange(true);
+    }
+
+    private void AfterAccessibilityChange(bool rebuild)
+    {
+        if (rebuild)
+        {
+            RebuildMenu();
+            ShowAccessibility();
+        }
+        else
+        {
+            RefreshAccessibility();
+            if (vrCanvasTransform != null) PlaceInFrontOfCamera(true);
+        }
+    }
+
+    public void ShowAccessibility()
+    {
+        ShowMain();
+        mainPanel.SetActive(false);
+        accessibilityPanel.SetActive(true);
+        RefreshAccessibility();
     }
 
     private void BuildInstructionsPanel(Transform parent)
@@ -562,6 +647,11 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         if (instructionsPanel != null)
         {
             instructionsPanel.SetActive(false);
+        }
+
+        if (accessibilityPanel != null)
+        {
+            accessibilityPanel.SetActive(false);
         }
 
         if (feedbackText != null)

@@ -7,18 +7,17 @@ using UnityEngine.XR.Interaction.Toolkit.Locomotion.Movement;
 using UnityEngine.XR.Interaction.Toolkit.Locomotion.Turning;
 
 /// <summary>
-/// Movimiento del jugador en Nivel 1 y Nivel 2 con el joystick izquierdo (Quest).
+/// Movimiento del jugador en Nivel 1, 2 y 5 con el joystick izquierdo (Quest).
 /// Lee el stick directamente con el Input System, así no depende de las acciones del rig XRI,
 /// y mueve el XR Origin con su CharacterController para respetar paredes y piso.
 /// Sustituye a los proveedores de movimiento/gravedad del rig, que se desactivan al iniciar.
-/// Se crea solo en Nivel1 y Nivel2; no modifica la escena.
+/// Se crea solo en Nivel1, Nivel2 y Nivel5; no modifica la escena.
 /// </summary>
 public sealed class Level1ThumbstickMove : MonoBehaviour
 {
-    private const float MoveSpeed = 1.6f;
+    private const float BaseMoveSpeed = 1.6f;
     private const float Deadzone = 0.15f;
     private const float GravityAcceleration = -9.81f;
-    private const float SnapTurnDegrees = 30f;
     private const float TurnEngageThreshold = 0.7f;
     private const float TurnReleaseThreshold = 0.3f;
 
@@ -42,7 +41,7 @@ public sealed class Level1ThumbstickMove : MonoBehaviour
 
     private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
-        if (scene.name != "Nivel1" && scene.name != "Nivel2") return;
+        if (scene.name != "Nivel1" && scene.name != "Nivel2" && scene.name != "Nivel5") return;
         new GameObject("NP_ThumbstickMove").AddComponent<Level1ThumbstickMove>();
     }
 
@@ -96,7 +95,7 @@ public sealed class Level1ThumbstickMove : MonoBehaviour
         forward.Normalize();
         Vector3 right = Vector3.Cross(Vector3.up, forward);
 
-        Vector3 horizontal = (forward * input.y + right * input.x) * MoveSpeed;
+        Vector3 horizontal = (forward * input.y + right * input.x) * BaseMoveSpeed * NeuroPhobiaAccessibility.MoveSpeedScale;
 
         verticalVelocity = controller.isGrounded ? -1f : verticalVelocity + GravityAcceleration * Time.deltaTime;
 
@@ -110,7 +109,7 @@ public sealed class Level1ThumbstickMove : MonoBehaviour
 
         if (turnArmed && Mathf.Abs(x) > TurnEngageThreshold)
         {
-            origin.RotateAroundCameraUsingOriginUp(Mathf.Sign(x) * SnapTurnDegrees);
+            origin.RotateAroundCameraUsingOriginUp(Mathf.Sign(x) * NeuroPhobiaAccessibility.SnapTurnDegrees);
             turnArmed = false;
         }
         else if (Mathf.Abs(x) < TurnReleaseThreshold)

@@ -5882,6 +5882,11 @@ MonoBehaviour:
   groundMask:
     serializedVersion: 2
     m_Bits: 4294967295
+  blockOnObstacles: 0
+  obstacleRadius: 0.18
+  obstacleHeight: 0.3
+  obstacleSkin: 0.06
+  maxStepUp: 0.2
   maximumDistanceFromRoute: 14
   maximumVerticalDeviation: 1.5
 --- !u!4 &411067173
@@ -12965,7 +12970,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6598815579406187037, guid: 18ddb545287c546e19cc77dc9fbb2189, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -17575,6 +17580,11 @@ MonoBehaviour:
   groundMask:
     serializedVersion: 2
     m_Bits: 4294967295
+  blockOnObstacles: 0
+  obstacleRadius: 0.18
+  obstacleHeight: 0.3
+  obstacleSkin: 0.06
+  maxStepUp: 0.2
   maximumDistanceFromRoute: 14
   maximumVerticalDeviation: 1.5
 --- !u!4 &1259362482
@@ -19127,6 +19137,11 @@ MonoBehaviour:
   groundMask:
     serializedVersion: 2
     m_Bits: 4294967295
+  blockOnObstacles: 0
+  obstacleRadius: 0.18
+  obstacleHeight: 0.3
+  obstacleSkin: 0.06
+  maxStepUp: 0.2
   maximumDistanceFromRoute: 14
   maximumVerticalDeviation: 1.5
 --- !u!65 &1399095097
