@@ -111,6 +111,29 @@ namespace NeuroPhobia.Tests
             // Deja que arranquen GlobalSessionUI, TaskManager, etc.
             yield return null;
             yield return null;
+            yield return SkipSudsBefore();
+        }
+
+        // Al empezar el nivel, GlobalSessionUI pide el SUDS «antes» y pausa el juego hasta que se responde.
+        // Las pruebas lo contestan con -1 («prefiero no responder») para que el nivel arranque.
+        internal static IEnumerator SkipSudsBefore(float timeoutSeconds = 3f)
+        {
+            float start = Time.realtimeSinceStartup;
+            while (Time.realtimeSinceStartup - start < timeoutSeconds)
+            {
+                UnityEngine.Object ui = UnityEngine.Object.FindFirstObjectByType(Game("GlobalSessionUI"));
+                if (ui != null)
+                {
+                    GameObject panel = (GameObject)Get(ui, "sudsPanel");
+                    if (panel != null && panel.activeSelf)
+                    {
+                        Call(ui, "AnswerSuds", -1);
+                        yield return null;
+                        yield break;
+                    }
+                }
+                yield return null;
+            }
         }
 
         private static IEnumerator WaitForSpiders(float timeoutSeconds = 60f)
@@ -378,6 +401,8 @@ namespace NeuroPhobia.Tests
             LookAtWindowFromFreeSpot();
             float start = Time.realtimeSinceStartup;
             while (!(bool)Get(manager, "RepeatOffered") && Time.realtimeSinceStartup - start < 10f) yield return null;
+            // Antes del panel de repetir se pide el SUDS «después» del intento.
+            yield return SkipSudsBefore();
 
             Assert.IsTrue((bool)Get(manager, "RepeatOffered"), "Debe ofrecerse repetir el nivel.");
             Assert.IsTrue((bool)Static("GlobalSessionUI", "IsRepeatOffered"), "El panel de repetir debe estar visible.");
@@ -397,6 +422,8 @@ namespace NeuroPhobia.Tests
             yield return null;
             yield return null;
             yield return null;
+            // El nivel repetido vuelve a pedir el SUDS «antes» y queda en pausa hasta responder.
+            yield return SkipSudsBefore();
             yield return WaitForSpiders();
 
             object freshManager = Find("TaskManager");

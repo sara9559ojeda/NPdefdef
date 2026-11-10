@@ -17,6 +17,8 @@ public sealed class Level1ThumbstickMove : MonoBehaviour
 {
     private const float BaseMoveSpeed = 1.6f;
     private const float Deadzone = 0.15f;
+    private const float MinCapsuleRadius = 0.25f;
+    private const float MaxStepOffset = 0.2f;
     private const float GravityAcceleration = -9.81f;
     private const float TurnEngageThreshold = 0.7f;
     private const float TurnReleaseThreshold = 0.3f;
@@ -78,6 +80,13 @@ public sealed class Level1ThumbstickMove : MonoBehaviour
             origin = FindFirstObjectByType<XROrigin>();
             if (origin == null) return;
             controller = origin.GetComponent<CharacterController>();
+            // El radio del rig (0,1) deja la cabeza casi dentro de la pared; con 0,25 la cápsula la detiene antes.
+            if (controller != null)
+            {
+                controller.radius = Mathf.Max(controller.radius, MinCapsuleRadius);
+                // Con 0,5 m de escalón el rig subía a mesas y sofás; 0,2 m solo salva umbrales y bordes de alfombra.
+                controller.stepOffset = Mathf.Min(controller.stepOffset, MaxStepOffset);
+            }
             DisableRigLocomotion(origin);
         }
 

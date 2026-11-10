@@ -11,6 +11,8 @@ using UI = NeuroPhobiaUITheme;
 /// <summary>Una sola interfaz de sesión por escena jugable; no modifica las escenas XR.</summary>
 public sealed class GlobalSessionUI : MonoBehaviour
 {
+    private const float MenuPlaneDistance = 0.45f;
+    private const float MenuScale = 0.75f;
     private static GlobalSessionUI current;
     private Canvas canvas;
     private GameObject pausePanel;
@@ -116,6 +118,7 @@ public sealed class GlobalSessionUI : MonoBehaviour
 
     private void Update()
     {
+        KeepCameraBinding();
         if (syncText != null && summaryPanel != null && summaryPanel.activeSelf)
         {
             if (apiClient == null) apiClient = FindFirstObjectByType<FastAPIClient>();
@@ -278,24 +281,34 @@ public sealed class GlobalSessionUI : MonoBehaviour
         return metrics;
     }
 
+    // Si el jugador cambia de cámara (rig de escritorio o XR), el menú la sigue.
+    private void KeepCameraBinding()
+    {
+        if (canvas == null || canvas.renderMode != RenderMode.ScreenSpaceCamera) return;
+        Camera main = Camera.main;
+        if (main != null && main.isActiveAndEnabled && canvas.worldCamera != main) canvas.worldCamera = main;
+    }
+
     private void BuildCanvas()
     {
         Camera camera = Camera.main != null ? Camera.main : FindFirstObjectByType<Camera>();
         canvas = gameObject.AddComponent<Canvas>();
         if (camera != null)
         {
-            canvas.renderMode = RenderMode.WorldSpace;
-            transform.SetParent(camera.transform, false);
-            transform.localPosition = new Vector3(0f, 0f, 1.7f);
-            transform.localRotation = Quaternion.identity;
-            transform.localScale = Vector3.one * .001f;
+            // Pegado a la cámara, como el HUD de los niveles: un lienzo en el mundo a 1,7 m
+            // quedaba tapado o atravesado por paredes y muebles.
+            canvas.renderMode = RenderMode.ScreenSpaceCamera;
+            canvas.worldCamera = camera;
+            canvas.planeDistance = MenuPlaneDistance;
+            CanvasScaler scaler = gameObject.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
+            scaler.scaleFactor = MenuScale;
         }
         else canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         canvas.overrideSorting = true;
         canvas.sortingOrder = 32000;
         RectTransform root = GetComponent<RectTransform>();
         if (root == null) root = gameObject.AddComponent<RectTransform>();
-        root.sizeDelta = new Vector2(1000f, 650f);
         gameObject.AddComponent<TrackedDeviceGraphicRaycaster>();
         // Sin GraphicRaycaster estándar los botones no responden al mouse/pantalla.
         gameObject.AddComponent<GraphicRaycaster>();
