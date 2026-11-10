@@ -227,7 +227,7 @@ namespace NeuroPhobia.Level45
                 }
 
                 looking = true;
-                lookedSpiderName = spiderVisual.name;
+                lookedSpiderName = "Sí";
                 lookAngle = candidateAngle;
                 break;
             }

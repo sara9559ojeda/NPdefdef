@@ -93,8 +93,39 @@ public sealed class Level2SpawnAlign : MonoBehaviour
 
         if (controller != null) controller.enabled = true;
 
+        GroundPlayer(origin, spawn);
         PlaceSpider(origin, spawn, direction);
         Debug.Log("NeuroPhobia: jugador ubicado en Nivel2 -> " + cam.transform.position);
+    }
+
+    // Deja los pies del rig sobre el suelo y quita la altura de ojos por defecto del prefab cuando el
+    // seguimiento es de piso: con el rig a escala 2.6 esos 1.36 m sobrantes sumaban ~3.5 m de vuelo.
+    private static void GroundPlayer(XROrigin origin, Vector3 spawn)
+    {
+        Transform offset = origin.CameraFloorOffsetObject != null ? origin.CameraFloorOffsetObject.transform : null;
+        if (offset != null && origin.CurrentTrackingOriginMode == TrackingOriginModeFlags.Floor)
+        {
+            Vector3 local = offset.localPosition;
+            local.y = 0f;
+            offset.localPosition = local;
+        }
+
+        RaycastHit[] hits = Physics.RaycastAll(
+            spawn + Vector3.up * 2f, Vector3.down, 6f, ~0, QueryTriggerInteraction.Ignore);
+        float floorY = float.MinValue;
+        foreach (RaycastHit hit in hits)
+        {
+            if (hit.collider.transform.IsChildOf(origin.transform)) continue;
+            if (Mathf.Abs(hit.point.y - origin.transform.position.y) > 0.5f) continue;
+            if (hit.point.y > floorY) floorY = hit.point.y;
+        }
+
+        if (floorY > float.MinValue)
+        {
+            Vector3 position = origin.transform.position;
+            position.y = floorY;
+            origin.transform.position = position;
+        }
     }
 
     // Primer rumbo (empezando por +Z) con espacio libre hasta la araña; si todos están bloqueados, +Z.

@@ -30,6 +30,7 @@ namespace NeuroPhobia.Tests
             yield return SceneManager.LoadSceneAsync("Nivel4");
 #endif
             yield return null;
+            yield return Nivel5PlayModeTests.SkipSudsBefore();
 
             GameObject spider = GameObject.Find(SpiderName);
             Assert.IsNotNull(spider, "No se encontró " + SpiderName + " en Nivel4.");

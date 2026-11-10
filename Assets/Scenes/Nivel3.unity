@@ -14956,6 +14956,7 @@ MonoBehaviour:
   collectDistance: 1.6
   completionDelay: 5
   nextScene: Nivel4
+  collectClip: {fileID: 8300000, guid: 1e16f0c7c7e160b4cbcecba227da07a1, type: 3}
 --- !u!4 &1242263151
 Transform:
   m_ObjectHideFlags: 0

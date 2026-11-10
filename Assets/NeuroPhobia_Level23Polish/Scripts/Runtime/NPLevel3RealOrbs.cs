@@ -14,6 +14,8 @@ public class NPLevel3RealOrbs : MonoBehaviour
     public float collectDistance = 1.6f;
     public float completionDelay = 5f;
     public string nextScene = "Nivel4";
+    [Tooltip("Sonido al agarrar un orbe (el mismo checkpoint del Nivel 4).")]
+    public AudioClip collectClip;
 
     int count = 0;
     bool done = false;
@@ -21,10 +23,16 @@ public class NPLevel3RealOrbs : MonoBehaviour
     TMP_Text messageText;
     Image progressFill;
     Canvas hud;
+    AudioSource sfx;
 
     void Start()
     {
         ResolvePlayers();
+        sfx = gameObject.AddComponent<AudioSource>();
+        sfx.playOnAwake = false;
+        sfx.spatialBlend = 0f;
+        MakeOrbGlow(orb1);
+        MakeOrbGlow(orb2);
         if (orb1) orb1.SetActive(true);
         if (orb2) orb2.SetActive(false);
         BuildHUD();
@@ -49,8 +57,22 @@ public class NPLevel3RealOrbs : MonoBehaviour
             Collect(target);
     }
 
+    // El material ya trae color de emisión, pero con la palabra clave apagada solo brillaba la luz cercana.
+    // Se enciende en una instancia del material para que el orbe se vea luminoso a cualquier distancia.
+    void MakeOrbGlow(GameObject orb)
+    {
+        if (!orb) return;
+        Renderer r = orb.GetComponent<Renderer>();
+        if (!r) return;
+        Material m = r.material;
+        m.EnableKeyword("_EMISSION");
+        m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.None;
+        if (m.HasProperty("_EmissionColor")) m.SetColor("_EmissionColor", m.GetColor("_EmissionColor") * 1.5f);
+    }
+
     void Collect(GameObject target)
     {
+        if (sfx && collectClip) sfx.PlayOneShot(collectClip);
         target.SetActive(false);
         count++;
 

@@ -19,6 +19,8 @@ public class Level5TaskInteraction : MonoBehaviour
     private float currentSecondHingeAngle;
     [Tooltip("Al abrirse, el collider de interacción de este objeto deja de bloquear el paso (se activa en la puerta).")]
     public bool clearPathWhenOpen = false;
+    [Tooltip("Otros colliders que también se desactivan al abrir (p. ej. el del marco, que cubre todo el hueco).")]
+    public Collider[] alsoClearWhenOpen = new Collider[0];
     private bool activated;
 
     public bool IsActivated => activated;
@@ -61,6 +63,8 @@ public class Level5TaskInteraction : MonoBehaviour
         if (clearPathWhenOpen && movingPart != null)
         {
             foreach (Collider own in GetComponents<Collider>()) own.enabled = false;
+            // Colliders hijos que cubren el hueco, como el del marco de la puerta, que es una caja maciza.
+            foreach (Collider extra in alsoClearWhenOpen) if (extra != null) extra.enabled = false;
         }
         if (controlledLight != null) controlledLight.enabled = !controlledLight.enabled;
         if (taskManager != null) taskManager.CompleteTask(taskId);
