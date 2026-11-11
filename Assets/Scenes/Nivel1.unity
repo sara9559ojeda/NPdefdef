@@ -1389,8 +1389,6 @@ MonoBehaviour:
   desktopCamera: {fileID: 863197631}
   askEveryTimeSceneStarts: 1
   inputGuardSeconds: 0.65
-  computerLabel: USAR COMPUTADOR
-  vrLabel: USAR REALIDAD VIRTUAL
 --- !u!4 &589342921
 Transform:
   m_ObjectHideFlags: 0
@@ -1879,7 +1877,7 @@ MonoBehaviour:
   m_spriteAsset: {fileID: 0}
   m_tintAllSprites: 0
   m_StyleSheet: {fileID: 0}
-  m_TextStyleHashCode: 0
+  m_TextStyleHashCode: -1183493901
   m_overrideHtmlColors: 0
   m_faceColor:
     serializedVersion: 2
@@ -2023,15 +2021,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1717954561962503726, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
       propertyPath: m_LocalScale.x
-      value: 1
+      value: 1.3
       objectReference: {fileID: 0}
     - target: {fileID: 1717954561962503726, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
       propertyPath: m_LocalScale.y
-      value: 1
+      value: 1.3
       objectReference: {fileID: 0}
     - target: {fileID: 1717954561962503726, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
       propertyPath: m_LocalScale.z
-      value: 1
+      value: 1.3
       objectReference: {fileID: 0}
     - target: {fileID: 1717954561962503726, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
       propertyPath: m_LocalPosition.x
@@ -2055,7 +2053,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1717954561962503726, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
       propertyPath: m_LocalRotation.y
-      value: 0.34202014
+      value: 0.34202015
       objectReference: {fileID: 0}
     - target: {fileID: 1717954561962503726, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
       propertyPath: m_LocalRotation.z
@@ -2638,6 +2636,59 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &880035993
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 880035994}
+  - component: {fileID: 880035995}
+  m_Layer: 0
+  m_Name: Limite_Techo
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &880035994
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 880035993}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -1.16, y: 4.22, z: -38.27}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2043644160}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!65 &880035995
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 880035993}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 8.4, y: 0.2, z: 6.35}
+  m_Center: {x: 0, y: 0, z: 0}
 --- !u!1001 &898013400
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -2883,6 +2934,7 @@ MonoBehaviour:
   player: {fileID: 774029068}
   spider: {fileID: 0}
   spiderLayerName: Spider
+  avoidanceRetreatSpeed: 0.8
 --- !u!114 &929074838
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3136,6 +3188,9 @@ MonoBehaviour:
   completionDelaySeconds: 5
   nextSceneName: Nivel2
   pauseGameplayDuringCompletion: 1
+  xrHudPlaneDistance: 0.72
+  hudCornerScale: 0.7
+  hudAnchor: {x: 0.5, y: 0.2}
 --- !u!4 &1068958031
 Transform:
   m_ObjectHideFlags: 0
@@ -3449,10 +3504,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::NeuroPhobiaDesktopRig
   desktopCamera: {fileID: 1188554134}
-  walkSpeed: 2.2
-  sprintSpeed: 4
-  mouseSensitivity: 0.12
-  gravity: -18
 --- !u!143 &1201071593
 CharacterController:
   m_ObjectHideFlags: 0
@@ -4383,7 +4434,7 @@ Canvas:
   m_OverridePixelPerfect: 0
   m_SortingBucketNormalizedSize: 0
   m_VertexColorAlwaysGammaSpace: 0
-  m_AdditionalShaderChannelsFlag: 0
+  m_AdditionalShaderChannelsFlag: 25
   m_UpdateRectTransformForStandalone: 0
   m_SortingLayerID: 0
   m_SortingOrder: 2000
@@ -4481,11 +4532,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::NeuroPhobiaDesktopController
   cameraPivot: {fileID: 1684503944}
+  pitchPivot: {fileID: 0}
   playerCamera: {fileID: 863197631}
   moveSpeed: 2.8
   runMultiplier: 1.55
   gravity: -18
-  mouseSensitivity: 0.1
+  mouseSensitivityX: 0.1
+  mouseSensitivityY: 0.1
   minPitch: -80
   maxPitch: 80
   lockCursorOnEnable: 1
@@ -4729,6 +4782,7 @@ Transform:
   - {fileID: 782000626}
   - {fileID: 97543936}
   - {fileID: 420165198}
+  - {fileID: 880035994}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &2074211779

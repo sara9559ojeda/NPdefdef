@@ -5889,6 +5889,11 @@ MonoBehaviour:
   groundMask:
     serializedVersion: 2
     m_Bits: 4294967295
+  blockOnObstacles: 0
+  obstacleRadius: 0.18
+  obstacleHeight: 0.3
+  obstacleSkin: 0.06
+  maxStepUp: 0.2
   maximumDistanceFromRoute: 14
   maximumVerticalDeviation: 1.5
 --- !u!4 &411067173
@@ -17583,6 +17588,11 @@ MonoBehaviour:
   groundMask:
     serializedVersion: 2
     m_Bits: 4294967295
+  blockOnObstacles: 0
+  obstacleRadius: 0.18
+  obstacleHeight: 0.3
+  obstacleSkin: 0.06
+  maxStepUp: 0.2
   maximumDistanceFromRoute: 14
   maximumVerticalDeviation: 1.5
 --- !u!4 &1259362482
@@ -19135,6 +19145,11 @@ MonoBehaviour:
   groundMask:
     serializedVersion: 2
     m_Bits: 4294967295
+  blockOnObstacles: 0
+  obstacleRadius: 0.18
+  obstacleHeight: 0.3
+  obstacleSkin: 0.06
+  maxStepUp: 0.2
   maximumDistanceFromRoute: 14
   maximumVerticalDeviation: 1.5
 --- !u!65 &1399095097
