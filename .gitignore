@@ -91,6 +91,8 @@ ExportedObj/
 *.keystore
 *.jks
 backend_url.txt
+/Assets/Resources/PerformanceTestRunInfo.json*
+/Assets/Resources/PerformanceTestRunSettings.json*
 
 # ── Paquetes de instalación y utilidades de reparación antiguas ──
 /[Aa]ssets/NeuroPhobia_Nivel2_PARQUE_GRANDE_FINAL.zip*

@@ -9,6 +9,14 @@ using UnityEngine;
 public static class BuildQuest3
 {
     [Serializable]
+    private class SigningConfiguration
+    {
+        public string keystorePath;
+        public string keystorePassword;
+        public string aliasName;
+        public string aliasPassword;
+    }
+    [Serializable]
     private class ReleaseManifest
     {
         public string filename;
@@ -29,7 +37,7 @@ public static class BuildQuest3
     public static void Build()
     {
         string commit = Git("rev-parse HEAD");
-        bool dirty = !string.IsNullOrWhiteSpace(Git("status --porcelain --untracked-files=no"));
+        bool dirty = !string.IsNullOrWhiteSpace(Git("status --porcelain"));
         PlayerSettings.SetScriptingBackend(BuildTargetGroup.Android, ScriptingImplementation.IL2CPP);
         PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
         EditorSceneManager.OpenScene("Assets/Scenes/MainMenu.unity");
@@ -44,17 +52,26 @@ public static class BuildQuest3
         string keystorePassword = PlayerSettings.Android.keystorePass;
         string aliasName = PlayerSettings.Android.keyaliasName;
         string aliasPassword = PlayerSettings.Android.keyaliasPass;
-        string configuredKeystore = Environment.GetEnvironmentVariable("NP_ANDROID_KEYSTORE_PATH");
-        bool signedForDistribution = !string.IsNullOrWhiteSpace(configuredKeystore) && File.Exists(configuredKeystore);
+        string signingPath = Environment.GetEnvironmentVariable("NP_ANDROID_SIGNING_CONFIG");
+        SigningConfiguration signing = null;
+        if (!string.IsNullOrWhiteSpace(signingPath))
+        {
+            signing = JsonUtility.FromJson<SigningConfiguration>(File.ReadAllText(signingPath));
+            File.Delete(signingPath);
+            if (signing == null || !File.Exists(signing.keystorePath) || string.IsNullOrWhiteSpace(signing.keystorePassword)
+                || string.IsNullOrWhiteSpace(signing.aliasName) || string.IsNullOrWhiteSpace(signing.aliasPassword))
+                throw new InvalidOperationException("The private signing configuration is incomplete");
+        }
+        bool signedForDistribution = signing != null;
         try
         {
             if (signedForDistribution)
             {
                 PlayerSettings.Android.useCustomKeystore = true;
-                PlayerSettings.Android.keystoreName = configuredKeystore;
-                PlayerSettings.Android.keystorePass = Environment.GetEnvironmentVariable("NP_ANDROID_KEYSTORE_PASSWORD");
-                PlayerSettings.Android.keyaliasName = Environment.GetEnvironmentVariable("NP_ANDROID_KEY_ALIAS");
-                PlayerSettings.Android.keyaliasPass = Environment.GetEnvironmentVariable("NP_ANDROID_KEY_PASSWORD");
+                PlayerSettings.Android.keystoreName = signing.keystorePath;
+                PlayerSettings.Android.keystorePass = signing.keystorePassword;
+                PlayerSettings.Android.keyaliasName = signing.aliasName;
+                PlayerSettings.Android.keyaliasPass = signing.aliasPassword;
             }
             string outputDirectory = "Builds/Quest3";
             Directory.CreateDirectory(outputDirectory);
@@ -70,8 +87,7 @@ public static class BuildQuest3
             if (report.summary.result != UnityEditor.Build.Reporting.BuildResult.Succeeded)
             {
                 Debug.LogError("Quest build failed with " + report.summary.totalErrors + " errors");
-                EditorApplication.Exit(1);
-                return;
+                throw new InvalidOperationException("Quest build failed");
             }
             string digest;
             using (SHA256 hash = SHA256.Create())
@@ -103,6 +119,7 @@ public static class BuildQuest3
             PlayerSettings.Android.keystorePass = keystorePassword;
             PlayerSettings.Android.keyaliasName = aliasName;
             PlayerSettings.Android.keyaliasPass = aliasPassword;
+            AssetDatabase.SaveAssets();
         }
     }
 

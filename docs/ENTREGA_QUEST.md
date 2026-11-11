@@ -16,16 +16,19 @@ El proyecto indicaba Unity 6000.3.7f1. Este PC dispone de 6000.3.25f1 con Androi
 
 `BuildQuest3.Build` genera `Builds/Quest3/NeuroPhobia.apk` y `release.json`. Android ARM64, IL2CPP, sin Development Build. Registra revisión Git, estado del árbol, tamaño, SHA-256 y backend.
 
-Para firma privada, configurar fuera del chat y solo durante el proceso:
+Para compilar en este PC con firma privada y entorno aislado:
 
-- `NP_ANDROID_KEYSTORE_PATH`
-- `NP_ANDROID_KEYSTORE_PASSWORD`
-- `NP_ANDROID_KEY_ALIAS`
-- `NP_ANDROID_KEY_PASSWORD`
+```powershell
+./tools/BuildQuestDelivery.ps1 -CreateSigningKey
+# En compilaciones posteriores, reutilizar la firma:
+./tools/BuildQuestDelivery.ps1
+```
+
+El script crea una clave local en `Builds/Signing`, restringe su acceso al usuario actual y guarda la contraseña protegida por Windows DPAPI. El archivo DPAPI solo puede descifrarse en el contexto de ese usuario/equipo: conservar la clave y exportar su contraseña a un gestor seguro fuera del chat antes de trasladarse a otra máquina. El JSON temporal de firma se elimina al leerlo en Unity y también al terminar el proceso. Unity recibe únicamente su ruta en `NP_ANDROID_SIGNING_CONFIG`; no recibe contraseñas ni claves de otros servicios en el entorno.
 
 Los archivos de firma y Builds están ignorados por Git. Conservar una copia segura del almacén y sus claves; son necesarios para actualizar instalaciones firmadas con él. No compartir contraseñas en informes. Si el APK anterior usa otra firma, no se puede actualizar encima: primero sincronizar sus registros pendientes y decidir cómo retirar esa instalación sin perder datos.
 
-Ejecutar el editor con `-batchmode -quit -projectPath <ruta> -executeMethod BuildQuest3.Build -logFile <log privado de compilación>`. No usar simultáneamente otro editor sobre el proyecto.
+No usar simultáneamente otro editor sobre el proyecto. La entrega usa SDK target 34, instalado con este editor, y mínimo 29; no requiere instalar SDK 33. Versión de la aplicación 0.2.0, código 2.
 
 ## Prueba física pendiente
 
