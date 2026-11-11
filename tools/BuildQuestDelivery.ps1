@@ -8,12 +8,9 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $signingDirectory = Join-Path $projectRoot 'Builds\Signing'
 New-Item -ItemType Directory -Force -Path $signingDirectory | Out-Null
 $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
-$permissions = [Security.AccessControl.DirectorySecurity]::new()
-$permissions.SetOwner($owner)
-$permissions.SetAccessRuleProtection($true, $false)
-$rule = [Security.AccessControl.FileSystemAccessRule]::new($owner, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
-$permissions.AddAccessRule($rule)
-Set-Acl -LiteralPath $signingDirectory -AclObject $permissions
+$aclTool = Join-Path ([Environment]::GetEnvironmentVariable('SystemRoot')) 'System32\icacls.exe'
+& $aclTool $signingDirectory '/inheritance:r' '/grant:r' ('*' + $owner.Value + ':(OI)(CI)F') '/q' | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Cannot restrict access to the private signing directory' }
 $keystorePath = Join-Path $signingDirectory 'neurophobia-delivery.keystore'
 $passwordPath = Join-Path $signingDirectory 'delivery-password.dpapi.xml'
 $configurationPath = Join-Path $signingDirectory 'build-signing.json'
