@@ -361,7 +361,7 @@ public sealed class GlobalSessionUI : MonoBehaviour
         // Estado del envío al backend (BPMN «¿Almacena datos?» y secuencia «Retroalimentación guardada»).
         syncText = Label("EnvioServidor", summaryPanel.transform, "", 20, new Vector2(0,-118), new Vector2(820,52), UI.Face.Type, UI.SageDeep);
         Button("Finalizar", summaryPanel.transform, "Finalizar", new Vector2(-210,-210), new Vector2(400,68), EndAndMenu);
-        Button("Menu", summaryPanel.transform, "Volver al menú principal", new Vector2(210,-210), new Vector2(400,68), EndAndMenu, UI.ButtonKind.Primary);
+        Button("Menu", summaryPanel.transform, "Ver resultado en el Refugio", new Vector2(210,-210), new Vector2(400,68), EndAndMenu, UI.ButtonKind.Primary);
         summaryPanel.SetActive(false);
 
         // SUDS (Wolpe, 1969): 0 = nada de ansiedad, 100 = la máxima que puedas imaginar. Textos aprobados por Sara (2026-11-05).

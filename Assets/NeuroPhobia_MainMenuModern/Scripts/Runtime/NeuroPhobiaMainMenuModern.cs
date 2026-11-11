@@ -31,6 +31,11 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
     private GameObject consentPanel;
     private GameObject gradePanel;
     private GameObject profilePanel;
+    private GameObject resultsPanel;
+    private TMP_Text resultsText;
+    private string feedbackSessionId;
+    private DeviceContextDto renderedFeedbackContext;
+    private string renderedFeedbackSessionId;
     // Vinculación del visor (contrato API v1, 6.1): es el «Inicio de sesión» del paciente en el BPMN.
     private const string PairingAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private GameObject pairingPanel;
@@ -67,6 +72,8 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         // Contexto del backend en el Refugio (nunca durante la exposición): grado previo y nivel permitido.
         FastAPIClient api = Api();
         if (api != null && api.IsPaired) api.StartCoroutine(api.RefreshContext(_ => UpdateGradeHint()));
+        if (SessionManager.Instance != null && SessionManager.Instance.HasEnded)
+            OpenFeedback(SessionManager.Instance.SessionId);
     }
 
     public void RebuildMenu()
@@ -244,6 +251,7 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         if (LevelSelectorEnabled) MenuItem(list.transform, "SeleccionarNivel", "Elegir nivel", ref y, ShowLevels, true);
         MenuItem(list.transform, "ElegirNivel", "Mis datos", ref y, ShowProfile, false);
         MenuItem(list.transform, "Instrucciones", "Controles e instrucciones", ref y, ShowInstructions, false);
+        MenuItem(list.transform, "Resultados", "Resultados guardados", ref y, ShowSavedFeedback, false);
         MenuItem(list.transform, "Salir", "Salir", ref y, QuitGame, false);
         first.Activate();
 
@@ -671,6 +679,55 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
             ToggleDeviceSession, 23f);
 
         PaperButton(profileSheet, "Volver", "Volver", UI.ButtonKind.Secondary, 60f, 592f, 156f, 68f, ShowMain);
+
+        resultsPanel = BuildScreen(parent, "ResultadosGuardados", "Resultados", 190f, 130f, 1060f, 706f,
+            "Resultado al finalizar", "Consulta el análisis guardado y su revisión pendiente.", 40f, out Transform resultsSheet);
+        resultsText = UI.AddText(UI.Node(resultsSheet, "Resultado"), "", UI.Face.Type, 23f, UI.Ink, TextAlignmentOptions.TopLeft);
+        resultsText.richText = false;
+        resultsText.enableAutoSizing = true;
+        resultsText.fontSizeMin = 17f;
+        resultsText.fontSizeMax = 23f;
+        resultsText.textWrappingMode = TextWrappingModes.Normal;
+        UI.Place(resultsText.gameObject, 60f, 180f, 940f, 380f);
+        PaperButton(resultsSheet, "Volver", "Volver", UI.ButtonKind.Secondary, 60f, 592f, 156f, 68f, ShowMain);
+        resultsPanel.SetActive(false);
+    }
+
+    public void ShowSavedFeedback()
+    {
+        OpenFeedback(null);
+    }
+
+    private void OpenFeedback(string sessionId)
+    {
+        ShowMain();
+        mainPanel.SetActive(false);
+        feedbackSessionId = sessionId;
+        resultsPanel.SetActive(true);
+        RefreshResults();
+        FastAPIClient api = Api();
+        if (api != null && api.IsPaired) api.StartCoroutine(api.RefreshContext(_ => RefreshResults()));
+    }
+
+    private void Update()
+    {
+        if (resultsPanel != null && resultsPanel.activeSelf) RefreshResults();
+    }
+
+    private void RefreshResults()
+    {
+        FastAPIClient api = Api();
+        DeviceContextDto context = api != null ? api.Context : null;
+        if (renderedFeedbackContext == context && renderedFeedbackSessionId == feedbackSessionId && !string.IsNullOrEmpty(resultsText.text)) return;
+        renderedFeedbackContext = context;
+        renderedFeedbackSessionId = feedbackSessionId;
+        SessionReport report = SessionManager.Instance != null ? SessionManager.Instance.GetReport() : null;
+        if (!string.IsNullOrEmpty(feedbackSessionId) && report != null && report.testSession)
+            resultsText.text = "Esta es una sesión de prueba. Sus registros no generan recomendaciones ni cuentan como progreso.";
+        else if (api == null || api.Context == null)
+            resultsText.text = "Aún no hay un análisis disponible. Vincula el visor y comprueba el estado del envío.";
+        else
+            resultsText.text = api.Context.FeedbackText(feedbackSessionId);
     }
 
     private void HideSessionPanels()
@@ -679,6 +736,7 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         if (gradePanel != null) gradePanel.SetActive(false);
         if (profilePanel != null) profilePanel.SetActive(false);
         if (pairingPanel != null) pairingPanel.SetActive(false);
+        if (resultsPanel != null) resultsPanel.SetActive(false);
     }
 
     private TMP_InputField CreateInput(Transform parent, string label, float x)

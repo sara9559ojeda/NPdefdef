@@ -286,7 +286,7 @@ namespace NeuroPhobia.Tests
             for (int sample = 0; sample < 6; sample++)
             {
                 yield return new WaitForSeconds(0.7f);
-                yield return new WaitForEndOfFrame();
+                yield return null;
                 foreach (Transform spider in LiveSpiders())
                 {
                     Transform fang = spider.GetComponentsInChildren<Transform>(true).FirstOrDefault(t => t.name == "Fang.L");

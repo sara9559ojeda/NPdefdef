@@ -9,6 +9,7 @@ public class SessionManager : MonoBehaviour
     public string SessionId { get; private set; }
     public int CurrentLevel { get; set; }
     public int PhobiaGrade { get; private set; }
+    public bool HasEnded => ended;
 
     private SessionReport report;
     private readonly System.Collections.Generic.Dictionary<int, int> levelRetries = new System.Collections.Generic.Dictionary<int, int>();

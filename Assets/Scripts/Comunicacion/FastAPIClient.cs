@@ -21,7 +21,8 @@ public class FastAPIClient : MonoBehaviour
 
     // Valor por defecto; se anula con persistentDataPath/backend_url.txt o con PlayerPrefs (ver PARAMETROS_IA.txt).
     // Se admite con o sin /api/v1 al final.
-    [SerializeField] private string baseUrl = "http://localhost:8000";
+    public const string DefaultBackendUrl = "https://d2jh1px5hj3b01.cloudfront.net";
+    [SerializeField] private string baseUrl = DefaultBackendUrl;
     [SerializeField] private int timeoutSeconds = 10;
 
     private string apiRoot;
@@ -31,6 +32,8 @@ public class FastAPIClient : MonoBehaviour
     private bool flushing;
     private int consecutiveFailures;
     private float nextAttemptAt;
+    private float nextFeedbackRefreshAt;
+    private bool feedbackContextRefreshNeeded;
     private readonly Dictionary<string, int> attemptsByLevel = new Dictionary<string, int>();
 
     /// <summary>Raíz de la API, terminada en /api/v1.</summary>
@@ -113,6 +116,7 @@ public class FastAPIClient : MonoBehaviour
         if (string.IsNullOrWhiteSpace(url)) return null;
         url = url.Trim().TrimEnd('/');
         bool valid = Uri.TryCreate(url, UriKind.Absolute, out Uri uri) && (uri.Scheme == "http" || uri.Scheme == "https");
+        if (valid && uri.Scheme == "http" && !Application.isEditor && !Debug.isDebugBuild) return null;
         return valid ? url : null;
     }
 
@@ -342,6 +346,18 @@ public class FastAPIClient : MonoBehaviour
         {
             if (!flushing && IsPaired && Time.realtimeSinceStartup >= nextAttemptAt && PendingCount > 0)
                 yield return FlushOnce();
+            bool safeToRead = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "MainMenu"
+                || GameStateManager.CurrentState == GameState.SESSION_END;
+            bool narrativePending = cachedContext != null && cachedContext.lastFeedback != null
+                && cachedContext.lastFeedback.analysis != null
+                && (cachedContext.lastFeedback.analysis.narrativeStatus == "pending" || cachedContext.lastFeedback.analysis.narrativeStatus == "generating");
+            if (safeToRead && IsPaired && (feedbackContextRefreshNeeded || narrativePending)
+                && Time.realtimeSinceStartup >= nextFeedbackRefreshAt)
+            {
+                feedbackContextRefreshNeeded = false;
+                yield return RefreshContext(_ => Notify());
+                nextFeedbackRefreshAt = Time.realtimeSinceStartup + 5f;
+            }
             yield return wait;
         }
     }
@@ -407,6 +423,7 @@ public class FastAPIClient : MonoBehaviour
         {
             LastFeedbackStatus = result.feedback.status;
             LastFeedbackSessionId = result.session.sessionId;
+            feedbackContextRefreshNeeded = true;
         }
     }
 
@@ -428,6 +445,8 @@ public class FastAPIClient : MonoBehaviour
         int pending = PendingCount;
         if (pending > 0) return $"Enviando datos al servidor… ({pending} pendientes)";
         if (LastFeedbackStatus == "saved") return "Datos guardados en el servidor. Retroalimentación guardada.";
+        if (LastFeedbackStatus == "not_applicable") return "Sesión de prueba guardada. No se genera un análisis.";
+        if (LastFeedbackStatus == "insufficient_data") return "Sesión guardada, sin registros suficientes para generar una recomendación.";
         return "Datos guardados en el servidor.";
     }
 
@@ -461,10 +480,10 @@ public class FastAPIClient : MonoBehaviour
     }
 
     private static readonly System.Text.RegularExpressions.Regex NullNumber =
-        new System.Text.RegularExpressions.Regex("\"(phobiaGrade|allowedStartLevel)\"\\s*:\\s*null");
+        new System.Text.RegularExpressions.Regex("\"(phobiaGrade|allowedStartLevel|levelReached|totalDurationSeconds|levelDelta|durationDeltaSeconds|toleranceDelta)\"\\s*:\\s*null");
 
     private static readonly System.Text.RegularExpressions.Regex NullObject =
-        new System.Text.RegularExpressions.Regex("\"(recommendation|lastSession|session|feedback)\"\\s*:\\s*null");
+        new System.Text.RegularExpressions.Regex("\"(recommendation|lastSession|session|feedback|lastFeedback|analysis|comparison)\"\\s*:\\s*null");
 
     private static T Parse<T>(string body) where T : class
     {
@@ -525,6 +544,38 @@ public class DeviceContextDto
     public string phobiaGradeUpdatedAt;
     // Recomendación del análisis de la última sesión (vacía si no hay).
     public RecommendationDto recommendation = new RecommendationDto();
+    public DeviceSessionFeedbackDto lastFeedback;
+
+    public string FeedbackText(string sessionId = null)
+    {
+        if (lastFeedback == null || lastFeedback.analysis == null || string.IsNullOrEmpty(lastFeedback.sessionId)
+            || (!string.IsNullOrEmpty(sessionId) && lastFeedback.sessionId != sessionId))
+        {
+            string previous = RecommendationText();
+            return string.IsNullOrEmpty(sessionId) && !string.IsNullOrEmpty(previous)
+                ? previous : "El resultado de esta sesión todavía no está disponible. Comprueba el estado del envío.";
+        }
+        var text = new StringBuilder();
+        text.AppendLine("Nivel registrado: " + lastFeedback.levelReached);
+        text.AppendLine("Duración: " + Mathf.RoundToInt(lastFeedback.totalDurationSeconds) + " segundos");
+        text.AppendLine(RecommendationText());
+        DeviceAnalysisDto analysis = lastFeedback.analysis;
+        if (analysis.narrativeStatus == "generated" && !string.IsNullOrEmpty(analysis.narrative))
+            text.AppendLine("Resumen asistido por IA: " + analysis.narrative);
+        else if (!string.IsNullOrEmpty(analysis.explanation)) text.AppendLine(analysis.explanation);
+        if (analysis.narrativeStatus == "pending" || analysis.narrativeStatus == "generating")
+            text.AppendLine("El resumen asistido se está preparando. Los indicadores ya están guardados.");
+        DeviceComparisonDto comparison = lastFeedback.comparison;
+        if (comparison != null && !string.IsNullOrEmpty(comparison.previousSessionId))
+        {
+            text.AppendLine("Frente a la sesión anterior: diferencia de niveles " + comparison.levelDelta
+                + ", diferencia de duración " + Mathf.RoundToInt(comparison.durationDeltaSeconds) + " segundos.");
+            if (!comparison.toleranceComparable) text.AppendLine("Los índices no son comparables por el nivel o el método utilizado.");
+        }
+        else text.AppendLine("No hay una sesión anterior completa para comparar.");
+        text.Append("Resultados técnicos pendientes de revisión profesional; no demuestran mejoría clínica.");
+        return text.ToString();
+    }
 
     /// <summary>Texto para el paciente, o vacío si no hay recomendación. Textos aprobados por Sara (2026-11-05).</summary>
     public string RecommendationText()
@@ -550,4 +601,32 @@ public class RecommendationDto
     public string value;
     public string method;
     public string clinicalStatus;
+}
+
+[Serializable]
+public class DeviceSessionFeedbackDto
+{
+    public string sessionId;
+    public int levelReached;
+    public float totalDurationSeconds;
+    public DeviceAnalysisDto analysis;
+    public DeviceComparisonDto comparison;
+}
+
+[Serializable]
+public class DeviceAnalysisDto
+{
+    public string explanation;
+    public string narrative;
+    public string narrativeStatus;
+}
+
+[Serializable]
+public class DeviceComparisonDto
+{
+    public string previousSessionId;
+    public int levelDelta;
+    public float durationDeltaSeconds;
+    public float toleranceDelta;
+    public bool toleranceComparable;
 }

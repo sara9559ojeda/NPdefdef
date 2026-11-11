@@ -3072,7 +3072,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b7674e8ae4d7b084eb39c5bc9fc148a8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::FastAPIClient
-  baseUrl: http://localhost:8000
+  baseUrl: https://d2jh1px5hj3b01.cloudfront.net
   timeoutSeconds: 5
 --- !u!4 &597163153
 Transform:

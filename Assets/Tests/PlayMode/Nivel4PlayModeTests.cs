@@ -46,7 +46,7 @@ namespace NeuroPhobia.Tests
             while (measured < 5 && Time.realtimeSinceStartup - start < 40f)
             {
                 yield return new WaitForSeconds(0.7f);
-                yield return new WaitForEndOfFrame();
+                yield return null;
                 Vector3 moved = spider.transform.position - last; moved.y = 0f;
                 last = spider.transform.position;
                 if (moved.magnitude < 0.03f) continue;
