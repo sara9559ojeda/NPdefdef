@@ -522,20 +522,8 @@ namespace NeuroPhobia.Level45
 
             if (xrState)
             {
-                targetCanvas.renderMode =
-                    RenderMode.ScreenSpaceCamera;
-
-                Camera cameraComponent =
-                    preferredCamera != null &&
-                    preferredCamera.gameObject
-                        .activeInHierarchy
-                        ? preferredCamera
-                        : NPLevel45Camera.Find();
-
-                targetCanvas.worldCamera =
-                    cameraComponent;
-
-                targetCanvas.planeDistance = 0.72f;
+                // En el visor, el HUD va en el mundo, lejos y siguiendo la vista con retardo (antes, pegado a 0,72 m).
+                NeuroPhobiaHudFollow.AttachFullScreen(targetCanvas);
             }
             else
             {

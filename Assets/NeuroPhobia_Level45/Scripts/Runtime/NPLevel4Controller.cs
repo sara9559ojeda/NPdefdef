@@ -227,7 +227,7 @@ namespace NeuroPhobia.Level45
                 }
 
                 looking = true;
-                lookedSpiderName = spiderVisual.name;
+                lookedSpiderName = "Sí";
                 lookAngle = candidateAngle;
                 break;
             }
@@ -320,10 +320,8 @@ namespace NeuroPhobia.Level45
 
             if (XRSettings.isDeviceActive)
             {
-                levelHudCanvas.renderMode =
-                    RenderMode.ScreenSpaceCamera;
-                levelHudCanvas.worldCamera = playerCamera;
-                levelHudCanvas.planeDistance = 0.72f;
+                // En el visor, el HUD va en el mundo, lejos y siguiendo la vista con retardo (antes, pegado a 0,72 m).
+                NeuroPhobiaHudFollow.AttachFullScreen(levelHudCanvas);
             }
             else
             {

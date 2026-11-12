@@ -33,6 +33,8 @@ public sealed class Level5CompanionSpiders : MonoBehaviour
         public bool followsNearby;   // sigue mientras el jugador esté cerca
         public float leash;
         public float nextWander;
+        public Vector3 lastPosition;
+        public bool hasLastPosition;
     }
 
     private readonly List<Companion> companions = new List<Companion>();
@@ -253,7 +255,10 @@ public sealed class Level5CompanionSpiders : MonoBehaviour
         }
     }
 
-    // Garantía de distancia mínima: pase lo que pase, ninguna araña queda más cerca que minDistanceToPlayer.
+    // Distancia mínima: ninguna araña ENTRA por su cuenta a menos de minDistanceToPlayer (si su paso de este frame la
+    // acercaría, se deshace). Si es la persona la que se acerca, la araña no reacciona a su cuerpo: no se la empuja ni
+    // se la desplaza; se queda quieta mientras la persona esté dentro de esa distancia.
+    // (Antes se la teletransportaba fuera del radio, y en el visor parecía que se podía empujar a la araña.)
     private void LateUpdate()
     {
         if (playerCamera == null || !Ready) return;
@@ -263,21 +268,30 @@ public sealed class Level5CompanionSpiders : MonoBehaviour
         foreach (Companion c in companions)
         {
             if (c.patrol == null) continue;
-            Vector3 offset = Flat(c.patrol.transform.position - player);
-            if (offset.magnitude >= min) continue;
-
-            Vector3 direction = offset.sqrMagnitude > 0.0001f ? offset.normalized : Flat(-playerCamera.transform.forward).normalized;
-            Vector3 position = c.patrol.transform.position;
-            Vector3 pushed = new Vector3(player.x, position.y, player.z) + direction * min;
-            // El empujón nunca la mete en una pared o un mueble: si cae fuera de suelo libre, va al punto libre más cercano
-            // que respete la distancia mínima.
-            if (grid != null && !grid.IsReachable(pushed) && grid.TryNearest(pushed, out Vector3 free, player, min))
+            Transform spider = c.patrol.transform;
+            Vector3 now = spider.position;
+            float distanceNow = Flat(now - player).magnitude;
+            if (c.hasLastPosition && distanceNow < min)
             {
-                pushed = new Vector3(free.x, position.y, free.z);
+                float distanceBefore = Flat(c.lastPosition - player).magnitude;
+                if (distanceNow < distanceBefore - 0.0005f && Flat(now - c.lastPosition).magnitude > 0.0001f)
+                {
+                    // Fue la araña la que se acercó: vuelve a donde estaba.
+                    spider.position = c.lastPosition;
+                    now = c.lastPosition;
+                }
+                c.goal.position = now;
             }
-            c.patrol.transform.position = pushed;
-            c.goal.position = pushed;
+            c.lastPosition = now;
+            c.hasLastPosition = true;
         }
+    }
+
+    /// <summary>Último punto válido de cada araña (para las pruebas).</summary>
+    public bool IsHolding(Transform spider)
+    {
+        Companion c = companions.FirstOrDefault(x => x.patrol != null && x.patrol.transform == spider);
+        return c != null && (c.goal.position - spider.position).sqrMagnitude < 0.0001f;
     }
 
     private Vector3 ChooseGoal(Companion c, Vector3 player)

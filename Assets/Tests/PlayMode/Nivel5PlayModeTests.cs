@@ -175,32 +175,41 @@ namespace NeuroPhobia.Tests
             interactable.interactionManager.SelectEnter((IXRSelectInteractor)interactor, (IXRSelectInteractable)interactable);
         }
 
+        // Acciones físicas, como las haría la mano: girar la hoja, pulsar el interruptor, deslizar el cristal.
+        private static void OpenHinge(object task)
+        {
+            object hinge = Get(task, "hinge");
+            Assert.IsNotNull(hinge, Get(task, "taskId") + " no tiene bisagra.");
+            Call(hinge, "SetAngle", (float)Get(hinge, "openAngle"));
+        }
+
+        private static void PressLampSwitch()
+        {
+            object lampSwitch = Get(Task("TASK_LAMP"), "lampSwitch");
+            Assert.IsNotNull(lampSwitch, "La lámpara no tiene interruptor.");
+            PullTrigger(((Component)lampSwitch).gameObject);
+        }
+
+        private static void OpenWindow()
+        {
+            object slide = Get(Task("TASK_WINDOW"), "slide");
+            Assert.IsNotNull(slide, "La ventana no se desliza.");
+            Call(slide, "SetOffset", (float)Get(slide, "travel"));
+        }
+
         private static object FinishLevelTasksExceptWindow()
         {
-            PullTrigger(Ask(Task("TASK_LAMP")));
-            PullTrigger(Ask(Task("TASK_DOOR")));
-            PullTrigger(Ask(Task("TASK_FRIDGE")));
+            PressLampSwitch();
+            OpenHinge(Task("TASK_DOOR"));
+            OpenHinge(Task("TASK_FRIDGE"));
             return Find("TaskManager");
         }
 
-        private static void LookAtWindowFromFreeSpot()
+        private static Collider LeafCollider(object task)
         {
-            object gaze = Find("Level5WindowGaze");
-            Assert.IsNotNull(gaze, "No existe Level5WindowGaze.");
-            Transform window = (Transform)Get(gaze, "windowTarget");
-            Collider windowCollider = window.GetComponentInChildren<Collider>();
-            Vector3 center = windowCollider != null ? windowCollider.bounds.center : window.position;
-
-            // Cámara de prueba frente a la ventana; mira desde el interior del apartamento.
-            var cameraObject = new GameObject("TEST_Camera");
-            Camera camera = cameraObject.AddComponent<Camera>();
-            camera.enabled = false;
-            Vector3 toInside = (Vector3.zero - center); toInside.y = 0f;
-            Vector3 inside = toInside.sqrMagnitude > 0.01f ? toInside.normalized : Vector3.forward;
-            cameraObject.transform.position = center + inside * 1.5f;
-            cameraObject.transform.rotation = Quaternion.LookRotation((center - cameraObject.transform.position).normalized, Vector3.up);
-            Set(gaze, "playerCamera", camera);
-            Set(gaze, "requiredSeconds", 0.3f);
+            object hinge = Get(task, "hinge");
+            Assert.IsNotNull(hinge, "La tarea no tiene bisagra.");
+            return ((Component)hinge).GetComponent<Collider>();
         }
 
         // ------------------------------------------------------------------ pruebas
@@ -306,26 +315,50 @@ namespace NeuroPhobia.Tests
             }
         }
 
+        // Si la persona se acerca a una araña, la araña no reacciona a su cuerpo: no se la empuja ni se la desplaza.
         [UnityTest]
-        public IEnumerator Aranas_NingunaSeAcercaAlJugadorMasDeLaDistanciaMinima()
+        public IEnumerator Aranas_NoSeLasPuedeEmpujar_AlAcercarseSeQuedanQuietas()
+        {
+            yield return LoadLevel();
+            yield return WaitForSpiders();
+
+            Transform player = Camera.main.transform;
+            Transform victim = LiveSpiders()[0];
+            Vector3 before = victim.position;
+            player.position = victim.position + Vector3.up * 1.6f + victim.forward * 0.3f;
+            for (int i = 0; i < 30; i++) { player.position = before + Vector3.up * 1.6f + victim.forward * 0.3f; yield return null; }
+
+            Vector3 moved = victim.position - before; moved.y = 0f;
+            Assert.Less(moved.magnitude, 0.05f, victim.name + " se desplazó " + moved.magnitude.ToString("0.00") + " m al acercarse la persona.");
+            Rigidbody body = victim.GetComponent<Rigidbody>();
+            Assert.IsTrue(body == null || body.isKinematic, "La araña no debe tener física dinámica.");
+        }
+
+        // Ninguna araña entra por su cuenta en el radio mínimo de la persona.
+        [UnityTest]
+        public IEnumerator Aranas_NingunaSeAcercaPorSuCuentaMasDeLaDistanciaMinima()
         {
             yield return LoadLevel();
             yield return WaitForSpiders();
 
             float min = (float)Get(Get(Find("Level5CompanionSpiders"), "Settings"), "minDistanceToPlayer");
             Transform player = Camera.main.transform;
-            // Se coloca a la jugadora justo encima de una araña: el sistema debe apartarla.
-            Transform victim = LiveSpiders()[0];
-            player.position = victim.position + Vector3.up * 1.6f;
-            yield return null;
-            yield return null;
-
-            foreach (Transform spider in LiveSpiders())
+            var previous = LiveSpiders().ToDictionary(t => t, t => Flat(t.position - player.position));
+            float start = Time.realtimeSinceStartup;
+            while (Time.realtimeSinceStartup - start < 4f)
             {
-                Vector3 flat = spider.position - player.position; flat.y = 0f;
-                Assert.GreaterOrEqual(flat.magnitude, min - 0.05f, spider.name + " quedó a " + flat.magnitude.ToString("0.00") + " m del jugador.");
+                yield return null;
+                foreach (Transform spider in LiveSpiders())
+                {
+                    float now = Flat(spider.position - player.position);
+                    if (previous.TryGetValue(spider, out float before) && now < min - 0.02f)
+                        Assert.GreaterOrEqual(now, before - 0.001f, spider.name + " se acercó dentro del radio mínimo.");
+                    previous[spider] = now;
+                }
             }
         }
+
+        private static float Flat(Vector3 v) { v.y = 0f; return v.magnitude; }
 
         [UnityTest]
         public IEnumerator Nivel5_LasCuatroTareasCompletanElNivel()
@@ -334,13 +367,15 @@ namespace NeuroPhobia.Tests
             yield return WaitForSpiders();
 
             object manager = FinishLevelTasksExceptWindow();
-            Assert.AreEqual(3, (int)Get(manager, "CompletedCount"), "Lámpara, puerta y nevera deben completarse con el gatillo.");
+            yield return null;
+            yield return null;
+            Assert.AreEqual(3, (int)Get(manager, "CompletedCount"), "Lámpara, puerta y nevera deben completarse al apagarla y abrirlas.");
 
-            LookAtWindowFromFreeSpot();
+            OpenWindow();
             float start = Time.realtimeSinceStartup;
             while ((int)Get(manager, "CompletedCount") < 4 && Time.realtimeSinceStartup - start < 10f) yield return null;
 
-            Assert.AreEqual(4, (int)Get(manager, "CompletedCount"), "La ventana debe completarse al mirarla.");
+            Assert.AreEqual(4, (int)Get(manager, "CompletedCount"), "La ventana debe completarse al abrirla.");
             yield return null;
             Assert.AreEqual("SESSION_END", GameStateManagerState(), "Al terminar debe aparecer el resumen de sesión.");
             Assert.IsFalse((bool)Get(manager, "RepeatOffered"), "Sin alejamientos no debe ofrecerse repetir.");
@@ -353,20 +388,21 @@ namespace NeuroPhobia.Tests
             yield return WaitForSpiders();
 
             object door = Task("TASK_DOOR");
-            GameObject doorObject = Ask(door);
-            Collider box = doorObject.GetComponent<Collider>();
-            Assert.IsTrue(box.enabled, "La puerta cerrada debe tener su collider activo.");
+            Collider leaf = LeafCollider(door);
+            Assert.IsTrue(leaf.enabled && !leaf.isTrigger, "La hoja cerrada debe tener un collider sólido.");
 
-            // Hueco de la puerta: centro del collider cerrado.
-            Vector3 center = box.bounds.center;
+            // Hueco de la puerta: centro de la hoja cerrada.
+            Physics.SyncTransforms();
+            Vector3 center = leaf.bounds.center;
             Assert.IsTrue(Physics.CheckCapsule(center - Vector3.up * 0.8f, center + Vector3.up * 0.8f, 0.25f, ~0, QueryTriggerInteraction.Ignore),
                 "Con la puerta cerrada el hueco debe estar bloqueado.");
 
-            PullTrigger(doorObject);
-            yield return new WaitForSeconds(1.5f);   // la hoja gira 85° a 120°/s
+            OpenHinge(door);
+            yield return null;
+            yield return new WaitForFixedUpdate();
+            Physics.SyncTransforms();
 
-            Assert.IsTrue((bool)Get(door, "IsActivated"));
-            Assert.IsFalse(box.enabled, "El collider raíz de la puerta abierta no debe bloquear el paso.");
+            Assert.IsTrue((bool)Get(door, "IsActivated"), "Abrir la puerta debe completar la tarea.");
             Assert.IsFalse(Physics.CheckCapsule(center - Vector3.up * 0.8f, center + Vector3.up * 0.8f, 0.25f, ~0, QueryTriggerInteraction.Ignore),
                 "Con la puerta abierta el hueco debe quedar libre.");
         }
@@ -379,11 +415,190 @@ namespace NeuroPhobia.Tests
 
             object door = Task("TASK_DOOR");
             Transform player = Camera.main.transform;
-            player.position = Ask(door).GetComponent<Collider>().bounds.center + Vector3.forward * 0.8f;
+            player.position = LeafCollider(door).bounds.center + Vector3.forward * 0.8f;
             yield return new WaitForSeconds(1f);
 
             Assert.IsFalse((bool)Get(door, "IsActivated"), "La puerta no debe abrirse sola al acercarse.");
             Assert.AreEqual(0, (int)Get(Find("TaskManager"), "CompletedCount"));
+        }
+
+        // Ninguna tarea se cumple por proximidad, por mirar ni por apretar el gatillo sin mover nada.
+        [UnityTest]
+        public IEnumerator Tareas_NoSeCompletanPorProximidadMiradaNiGatilloSinMoverNada()
+        {
+            yield return LoadLevel();
+            yield return WaitForSpiders();
+            object manager = Find("TaskManager");
+            string[] ids = { "TASK_DOOR", "TASK_FRIDGE", "TASK_LAMP", "TASK_WINDOW" };
+
+            // 1) Proximidad: la cabeza atraviesa cada objeto de tarea y su antiguo trigger.
+            Transform head = Camera.main.transform;
+            foreach (string id in ids)
+            {
+                Transform target = Ask(Task(id)).transform;
+                for (int i = 0; i < 20; i++) { head.position = target.position + Vector3.up * 0.2f; yield return new WaitForFixedUpdate(); }
+            }
+            foreach (Component marker in FindAll("SimpleTaskInteractable").Cast<Component>())
+            {
+                for (int i = 0; i < 10; i++) { head.position = marker.transform.position; yield return new WaitForFixedUpdate(); }
+            }
+            Assert.AreEqual(0, (int)Get(manager, "CompletedCount"), "Acercarse o atravesar un objeto no debe completar tareas.");
+
+            // 2) Mirada: mirar la ventana fijamente varios segundos.
+            Transform glass = Ask(Task("TASK_WINDOW")).transform;
+            Vector3 glassCenter = glass.GetComponent<Collider>().bounds.center;
+            float start = Time.realtimeSinceStartup;
+            while (Time.realtimeSinceStartup - start < 6f)
+            {
+                head.position = glassCenter + (Vector3.zero - glassCenter).normalized * 1.5f;
+                head.rotation = Quaternion.LookRotation(glassCenter - head.position);
+                yield return null;
+            }
+            Assert.IsFalse((bool)Call(manager, "IsCompleted", "TASK_WINDOW"), "Mirar la ventana no debe completar la tarea.");
+
+            // 3) Apuntar y apretar el gatillo sobre puerta, nevera y ventana sin mover la mano.
+            PullTrigger(((Component)Get(Task("TASK_DOOR"), "hinge")).gameObject);
+            PullTrigger(((Component)Get(Task("TASK_FRIDGE"), "hinge")).gameObject);
+            PullTrigger(glass.gameObject);
+            for (int i = 0; i < 30; i++) yield return null;
+            Assert.AreEqual(0, (int)Get(manager, "CompletedCount"), "Apretar el gatillo sin girar ni deslizar no debe completar tareas.");
+
+            // Los marcadores heredados ya no reaccionan a triggers.
+            Assert.IsNull(Game("SimpleTaskInteractable").GetMethod("OnTriggerEnter", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance));
+            foreach (Behaviour gaze in FindAll("Level5WindowGaze").Cast<Behaviour>()) Assert.IsFalse(gaze.enabled, "La tarea por mirada debe quedar desactivada.");
+        }
+
+        // Agarrar la hoja con el mando y girar la mano alrededor de la bisagra abre la puerta y cumple la tarea.
+        [UnityTest]
+        public IEnumerator Puerta_SeAbreAgarrandolaYGirandoLaMano()
+        {
+            yield return LoadLevel();
+            yield return WaitForSpiders();
+
+            object door = Task("TASK_DOOR");
+            Component hinge = (Component)Get(door, "hinge");
+            Transform leaf = hinge.transform;
+            Transform pivotTransform = (Transform)Get(hinge, "pivot");
+            Vector3 pivot = pivotTransform != null ? pivotTransform.position : leaf.position;
+            Vector3 handle = leaf.GetComponent<Collider>().bounds.center;
+            float sign = Mathf.Sign((float)Get(hinge, "openAngle"));
+
+            var hand = new GameObject("TEST_Mano");
+            var interactor = hand.AddComponent<XRDirectInteractor>();
+            hand.AddComponent<SphereCollider>().isTrigger = true;
+            hand.transform.position = handle;
+            yield return null;
+            XRSimpleInteractable interactable = leaf.GetComponent<XRSimpleInteractable>();
+            interactable.interactionManager.SelectEnter((IXRSelectInteractor)interactor, (IXRSelectInteractable)interactable);
+
+            for (int step = 1; step <= 40; step++)
+            {
+                Vector3 offset = handle - pivot;
+                hand.transform.position = pivot + Quaternion.AngleAxis(sign * 80f * step / 40f, Vector3.up) * offset;
+                yield return null;
+            }
+            yield return null;
+
+            float fraction = (float)Get(hinge, "OpenFraction");
+            Assert.Greater(fraction, 0.6f, "La hoja debe seguir a la mano (abierta " + fraction.ToString("0.00") + ").");
+            Assert.IsTrue((bool)Get(door, "IsActivated"), "Abrir la puerta con la mano debe completar la tarea.");
+        }
+
+        // Todas las puertas y cajones de muebles: empiezan cerrados, tienen collider sólido y se pueden agarrar.
+        [UnityTest]
+        public IEnumerator Muebles_PuertasYCajonesCerradosConColliderEInteractuables()
+        {
+            yield return LoadLevel();
+            System.Collections.IList hinges = (System.Collections.IList)Static("Level5InteractiveHome", "Hinges");
+            System.Collections.IList slides = (System.Collections.IList)Static("Level5InteractiveHome", "Slides");
+            Assert.GreaterOrEqual(hinges.Count, 10, "Faltan puertas interactivas (armario, nevera, gabinetes, puertas de paso).");
+            Assert.GreaterOrEqual(slides.Count, 12, "Faltan cajones interactivos (armario, isla, cómoda, gabinetes).");
+
+            foreach (Component piece in hinges.Cast<Component>().Concat(slides.Cast<Component>()))
+            {
+                Collider collider = piece.GetComponent<Collider>();
+                Assert.IsNotNull(collider, piece.name + " no tiene collider.");
+                Assert.IsTrue(collider.enabled && !collider.isTrigger, piece.name + " no es sólido.");
+                Assert.IsNotNull(piece.GetComponent<XRSimpleInteractable>(), piece.name + " no se puede agarrar.");
+                Assert.AreEqual(0f, (float)Get(piece, "OpenFraction"), 0.001f, piece.name + " no empieza cerrado.");
+                // Si la malla quedó en un lote estático, Unity no la mueve aunque gire el Transform (se vería cerrada).
+                foreach (Renderer renderer in piece.GetComponentsInChildren<Renderer>())
+                    Assert.IsFalse(renderer.isPartOfStaticBatch, PathOf(renderer.transform) + " está en un lote estático: no se vería moverse.");
+            }
+            foreach (Component hinge in hinges.Cast<Component>().Where(h => !h.name.StartsWith("door_body")))
+                Assert.AreEqual(0f, Mathf.DeltaAngle(0f, hinge.transform.localEulerAngles.y), 1f, hinge.name + " no está cerrada (giro local).");
+
+            // Los marcos de paso ya no son cajas macizas.
+            foreach (Transform frame in UnityEngine.Object.FindObjectsByType<Transform>(FindObjectsSortMode.None).Where(t => t.name == "door_frame"))
+            {
+                BoxCollider box = frame.GetComponent<BoxCollider>();
+                if (box != null) Assert.IsFalse(box.enabled, PathOf(frame) + ": el marco macizo sigue tapando el hueco.");
+                Assert.IsNotNull(frame.Find("NP_Jamba_Izquierda"), PathOf(frame) + " sin jambas.");
+            }
+        }
+
+        // El rayo del mando detecta cada pieza: su collider pertenece a su propio interactable en el XRInteractionManager.
+        // (Antes, el interactable antiguo de la raíz de la nevera y de la puerta se quedaba con los colliders de las hojas
+        // y el rayo no las veía, aunque seleccionarlas por código funcionara.) Al apuntarlas se iluminan.
+        [UnityTest]
+        public IEnumerator Piezas_ElRayoLasDetecta_YSeIluminanAlApuntarlas()
+        {
+            yield return LoadLevel();
+            yield return WaitForSpiders();
+            var pieces = ((System.Collections.IList)Static("Level5InteractiveHome", "Hinges")).Cast<Component>()
+                .Concat(((System.Collections.IList)Static("Level5InteractiveHome", "Slides")).Cast<Component>())
+                .Append((Component)Get(Task("TASK_LAMP"), "lampSwitch")).ToList();
+            var failures = new System.Collections.Generic.List<string>();
+            foreach (Component piece in pieces)
+            {
+                XRSimpleInteractable interactable = piece.GetComponent<XRSimpleInteractable>();
+                Collider collider = piece.GetComponent<Collider>();
+                if (interactable.interactionManager == null ||
+                    !interactable.interactionManager.TryGetInteractableForCollider(collider, out IXRInteractable owner) ||
+                    !ReferenceEquals(owner, interactable))
+                    failures.Add(PathOf(piece.transform));
+                if (piece.GetComponent(Game("Level5HoverHighlight")) == null) failures.Add(PathOf(piece.transform) + " (sin resaltado)");
+            }
+            Assert.IsEmpty(failures, "Piezas que el rayo no detecta:\n" + string.Join("\n", failures));
+
+            // Un rayo real (XRRayInteractor) apuntando a la hoja de la nevera la detecta y la ilumina.
+            Component leaf = (Component)Get(Task("TASK_FRIDGE"), "hinge");
+            Vector3 target = leaf.GetComponent<Collider>().bounds.center;
+            Transform body = leaf.transform.parent.Find("fridge_body");
+            Vector3 front = Vector3.ProjectOnPlane(target - body.GetComponent<Renderer>().bounds.center, Vector3.up).normalized;
+            if (front.sqrMagnitude < 0.01f) front = Vector3.forward;
+            var hand = new GameObject("TEST_Rayo");
+            hand.transform.position = target + front * 1.2f;
+            hand.transform.rotation = Quaternion.LookRotation(target - hand.transform.position);
+            var ray = hand.AddComponent<XRRayInteractor>();
+            for (int i = 0; i < 5; i++) yield return null;
+            Assert.IsTrue(ray.interactablesHovered.Any(h => ((Component)h).gameObject == leaf.gameObject),
+                "El rayo no detecta la puerta de la nevera. Detecta: " + string.Join(", ", ray.interactablesHovered.Select(h => ((Component)h).name)));
+            Assert.AreEqual(1, (int)Get(leaf.GetComponent(Game("Level5HoverHighlight")), "State"), "La puerta apuntada debe iluminarse.");
+        }
+
+        // La lámpara se apaga de verdad con su interruptor (no con acercarse).
+        [UnityTest]
+        public IEnumerator Lampara_ElInterruptorApagaLaLuzDeVerdad()
+        {
+            yield return LoadLevel();
+            yield return WaitForSpiders();
+            object task = Task("TASK_LAMP");
+            Light light = (Light)Get(task, "controlledLight");
+            Assert.IsTrue(light.enabled, "La lámpara debe empezar encendida.");
+
+            PressLampSwitch();
+            yield return null;
+            yield return null;
+            Assert.IsFalse(light.enabled, "El interruptor debe apagar la luz.");
+            Assert.IsTrue((bool)Call(Find("TaskManager"), "IsCompleted", "TASK_LAMP"), "Apagar la lámpara debe completar la tarea.");
+        }
+
+        private static string PathOf(Transform t)
+        {
+            string path = t.name;
+            while (t.parent != null) { t = t.parent; path = t.name + "/" + path; }
+            return path;
         }
 
         [UnityTest]
@@ -398,7 +613,8 @@ namespace NeuroPhobia.Tests
             Set(collector, "avoidanceAttempts", (int)Get(manager, "maxAvoidanceAttempts") + 1);
 
             FinishLevelTasksExceptWindow();
-            LookAtWindowFromFreeSpot();
+            yield return null;
+            OpenWindow();
             float start = Time.realtimeSinceStartup;
             while (!(bool)Get(manager, "RepeatOffered") && Time.realtimeSinceStartup - start < 10f) yield return null;
             // Antes del panel de repetir se pide el SUDS «después» del intento.
@@ -494,28 +710,34 @@ namespace NeuroPhobia.Tests
         }
 
         [UnityTest]
-        public IEnumerator Ventana_LasAranasNoTapanLaMirada()
+        public IEnumerator Ventana_SeAbreDeslizandoElCristal_HayExteriorYUnaArana()
         {
             yield return LoadLevel();
             yield return WaitForSpiders();
 
-            LookAtWindowFromFreeSpot();
-            object gaze = Find("Level5WindowGaze");
-            Camera camera = (Camera)Get(gaze, "playerCamera");
-            Transform window = (Transform)Get(gaze, "windowTarget");
-            Collider windowCollider = window.GetComponentInChildren<Collider>();
-            Vector3 target = windowCollider != null ? windowCollider.bounds.center : window.position;
+            object task = Task("TASK_WINDOW");
+            Assert.IsFalse((bool)Get(task, "IsActivated"));
+            OpenWindow();
+            yield return null;
+            yield return null;
+            Assert.IsTrue((bool)Call(Find("TaskManager"), "IsCompleted", "TASK_WINDOW"), "Abrir la ventana debe completar la tarea.");
 
-            // Una araña se interpone entre la cámara y la ventana.
-            Transform spider = LiveSpiders()[0];
-            spider.position = Vector3.Lerp(camera.transform.position, target, 0.5f);
-            spider.GetComponent<Collider>().enabled = true;
-            yield return new WaitForFixedUpdate();
-
-            object manager = Find("TaskManager");
-            float start = Time.realtimeSinceStartup;
-            while (!(bool)Call(manager, "IsCompleted", "TASK_WINDOW") && Time.realtimeSinceStartup - start < 10f) yield return null;
-            Assert.IsTrue((bool)Call(manager, "IsCompleted", "TASK_WINDOW"), "Una araña delante no debe impedir completar la ventana.");
+            Renderer glassRenderer = Ask(task).GetComponent<Renderer>();
+            Assert.IsFalse(glassRenderer.isPartOfStaticBatch, "El cristal está en un lote estático: no se vería subir.");
+            GameObject exterior = GameObject.Find("NP_L5_Exterior");
+            Assert.IsNotNull(exterior, "Por la ventana solo se ve el skybox: falta el exterior.");
+            // El exterior queda al otro lado del cristal respecto al apartamento.
+            Bounds apartment = new Bounds(glassRenderer.bounds.center, Vector3.zero);
+            foreach (Renderer r in GameObject.Find("NP_L5_APARTAMENTO_VISUAL").GetComponentsInChildren<Renderer>()) apartment.Encapsulate(r.bounds);
+            Bounds outside = new Bounds(exterior.transform.position, Vector3.zero);
+            foreach (Renderer r in exterior.GetComponentsInChildren<Renderer>()) outside.Encapsulate(r.bounds);
+            Vector3 toApartment = apartment.center - glassRenderer.bounds.center; toApartment.y = 0f;
+            Vector3 toExterior = outside.center - glassRenderer.bounds.center; toExterior.y = 0f;
+            Assert.Less(Vector3.Dot(toApartment, toExterior), 0f, "El exterior se construyó del lado del apartamento.");
+            Assert.Greater(exterior.GetComponentsInChildren<Renderer>().Length, 10, "El exterior debe tener edificios.");
+            GameObject spider = GameObject.Find("NP_L5_Arana_Ventana");
+            Assert.IsNotNull(spider, "Falta la araña de la ventana.");
+            Assert.Less(Vector3.Distance(spider.transform.position, Ask(task).GetComponent<Collider>().bounds.center), 1.5f, "La araña debe estar en la ventana.");
         }
 
         private static string GameStateManagerState() => Static("GameStateManager", "CurrentState").ToString();

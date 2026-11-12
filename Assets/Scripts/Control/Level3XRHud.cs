@@ -12,11 +12,7 @@ using UnityEngine.XR;
 /// </summary>
 public sealed class Level3XRHud : MonoBehaviour
 {
-    private const float Distance = 1.0f;
-    private const float WidthMeters = 1.1f;
-    private const float ReferenceWidth = 1280f;
-    private const float ReferenceHeight = 720f;
-    private const float LayerSpacing = 0.004f;
+    private const float LayerSpacing = 0.01f;
 
     private readonly List<Canvas> converted = new List<Canvas>();
     private Camera cam;
@@ -55,27 +51,14 @@ public sealed class Level3XRHud : MonoBehaviour
         }
 
         converted.RemoveAll(c => c == null);
-        for (int i = 0; i < converted.Count; i++)
-        {
-            Place(converted[i], i);
-        }
     }
 
+    // Antes se pegaban a la cabeza a 1 m, en el centro de la vista. Ahora van en el mundo, lejos (2,4 m), con el
+    // centro libre, y siguen la vista con retardo (NeuroPhobiaHudFollow).
     private void Convert(Canvas canvas)
     {
-        canvas.renderMode = RenderMode.WorldSpace;
-        canvas.worldCamera = cam;
-        RectTransform rect = canvas.GetComponent<RectTransform>();
-        rect.sizeDelta = new Vector2(ReferenceWidth, ReferenceHeight);
-        rect.localScale = Vector3.one * (WidthMeters / ReferenceWidth);
+        NeuroPhobiaHudFollow follow = NeuroPhobiaHudFollow.AttachFullScreen(canvas);
+        if (follow != null) follow.distance += converted.Count * LayerSpacing;
         converted.Add(canvas);
-    }
-
-    private void Place(Canvas canvas, int index)
-    {
-        Transform t = canvas.transform;
-        Transform head = cam.transform;
-        t.position = head.position + head.forward * (Distance + index * LayerSpacing);
-        t.rotation = Quaternion.LookRotation(t.position - head.position, head.up);
     }
 }

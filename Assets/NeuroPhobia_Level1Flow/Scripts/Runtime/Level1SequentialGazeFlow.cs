@@ -173,17 +173,16 @@ public sealed class Level1SequentialGazeFlow : MonoBehaviour
                 return;
             }
 
-            if (hudCanvas.renderMode != RenderMode.ScreenSpaceCamera || hudCanvas.worldCamera != playerCamera)
+            // En el visor, el HUD va en el mundo, lejos (2,4 m) y siguiendo la vista con retardo.
+            if (hudCanvas.renderMode != RenderMode.WorldSpace)
             {
-                hudCanvas.renderMode = RenderMode.ScreenSpaceCamera;
-                hudCanvas.worldCamera = playerCamera;
-                hudCanvas.planeDistance = xrHudPlaneDistance;
+                NeuroPhobiaHudFollow.AttachFullScreen(hudCanvas);
             }
 
             SetHudAnchor(true);
 
         }
-        else if (hudCanvas.renderMode == RenderMode.ScreenSpaceCamera)
+        else if (hudCanvas.renderMode != RenderMode.ScreenSpaceOverlay)
         {
             hudCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
             hudCanvas.worldCamera = null;
