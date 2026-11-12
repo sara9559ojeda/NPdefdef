@@ -85,7 +85,7 @@ public class Level5HUD : MonoBehaviour
         taskProgressText.text = "Tareas:\n" + Mark(done, "TASK_LAMP", "Apagar lámpara") + "\n" +
             Mark(done, "TASK_DOOR", "Abrir puerta") + "\n" +
             Mark(done, "TASK_FRIDGE", "Abrir nevera") + "\n" +
-            Mark(done, "TASK_WINDOW", "Observar ventana") + "\n\n" +
+            Mark(done, "TASK_WINDOW", "Abrir ventana") + "\n\n" +
             $"Tareas completadas: {done.Count} / {total}";
     }
 
