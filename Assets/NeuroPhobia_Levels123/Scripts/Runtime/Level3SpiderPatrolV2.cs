@@ -185,6 +185,54 @@ public class Level3SpiderPatrolV2 : MonoBehaviour
     private void LateUpdate()
     {
         EnsureVisible();
+        CancelAnimationTurnAndDrift();
+    }
+
+    // Igual que NPNaturalSpiderPatrol (Nivel5): el clip de caminar hace girar el cuerpo unos ±35° y lo desplaza.
+    // Se corrige después de la animación para que la cabeza apunte siempre hacia donde avanza la araña
+    // y el cuerpo siga al punto lógico (si no, parece que camina de lado o se desliza).
+    private Transform headLeftBone;
+    private Transform headRightBone;
+    private Transform abdomenBone;
+    private Transform animationRootBone;
+    private float appliedYaw;
+    private bool bonesSearched;
+
+    private void CancelAnimationTurnAndDrift()
+    {
+        if (visualRoot == null || visualRoot.parent != transform || !hasAnimatorMotion) return;
+        if (!bonesSearched)
+        {
+            bonesSearched = true;
+            Transform[] bones = visualRoot.GetComponentsInChildren<Transform>(true);
+            headLeftBone = bones.FirstOrDefault(b => b.name == "Fang.L");
+            headRightBone = bones.FirstOrDefault(b => b.name == "Fang.R");
+            abdomenBone = bones.FirstOrDefault(b => b.name == "Back");
+            animationRootBone = bones.FirstOrDefault(b => b.name == "Root");
+        }
+
+        if (headLeftBone != null && abdomenBone != null)
+        {
+            Vector3 tip = headRightBone != null ? (headLeftBone.position + headRightBone.position) * 0.5f : headLeftBone.position;
+            Vector3 axis = transform.InverseTransformDirection(tip - abdomenBone.position);
+            axis.y = 0f;
+            if (axis.sqrMagnitude > 1e-6f)
+            {
+                float measuredYaw = Mathf.Atan2(axis.x, axis.z) * Mathf.Rad2Deg;
+                float rawYaw = measuredYaw - appliedYaw;
+                appliedYaw = -rawYaw;
+                visualRoot.localRotation = Quaternion.Euler(0f, appliedYaw, 0f) * visualBaseRotation;
+            }
+        }
+
+        if (animationRootBone != null)
+        {
+            Vector3 bodyOffset = transform.InverseTransformPoint(animationRootBone.position);
+            bodyOffset.y = 0f;
+            Vector3 position = visualRoot.localPosition - bodyOffset;
+            position.y = visualRoot.localPosition.y;
+            visualRoot.localPosition = position;
+        }
     }
 
     private void PreparePhysics()

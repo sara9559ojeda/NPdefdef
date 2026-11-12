@@ -226,6 +226,36 @@ namespace NeuroPhobia.Tests
             Assert.Greater(moved, 0.05f, "Las arañas no se mueven.");
         }
 
+        // La araña camina de frente: la cabeza (hueso Fang.L respecto a Back) apunta hacia donde avanza (cambio del 04-11).
+        [UnityTest]
+        public IEnumerator LasAranasCaminanConLaCabezaDelante()
+        {
+            yield return Load();
+            yield return new WaitForSeconds(1.5f);
+            Transform[] spiders = Spiders();
+            Assert.Greater(spiders.Length, 0);
+            var report = new List<string>();
+            for (int sample = 0; sample < 5; sample++)
+            {
+                yield return new WaitForSeconds(0.6f);
+                foreach (Transform spider in spiders)
+                {
+                    Transform fang = spider.GetComponentsInChildren<Transform>(true).FirstOrDefault(t => t.name == "Fang.L");
+                    Transform back = spider.GetComponentsInChildren<Transform>(true).FirstOrDefault(t => t.name == "Back");
+                    Assert.IsNotNull(fang, spider.name + " no tiene el hueso Fang.L");
+                    Assert.IsNotNull(back, spider.name + " no tiene el hueso Back");
+                    // Punto medio de los dos colmillos: Fang.L solo está a un lado del eje del cuerpo.
+                    Transform fangR = spider.GetComponentsInChildren<Transform>(true).FirstOrDefault(t => t.name == "Fang.R");
+                    Vector3 tip = fangR != null ? (fang.position + fangR.position) * 0.5f : fang.position;
+                    Vector3 head = tip - back.position; head.y = 0f;
+                    Vector3 forward = spider.forward; forward.y = 0f;
+                    float angle = Vector3.Angle(head, forward);
+                    if (angle > 20f) report.Add(spider.name + ": " + angle.ToString("0") + "°");
+                }
+            }
+            Assert.IsEmpty(report, "Arañas con la cabeza desviada del avance: " + string.Join(", ", report.Distinct()));
+        }
+
         private static Transform[] Spiders() =>
             UnityEngine.Object.FindObjectsByType(Game("Level3SpiderPatrolV2"), FindObjectsSortMode.None)
                 .Cast<Component>().Where(c => ((Behaviour)c).isActiveAndEnabled).Select(c => c.transform).ToArray();
