@@ -1,0 +1,451 @@
+using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+using UnityEngine.XR.Interaction.Toolkit.Interactables;
+
+/// <summary>
+/// Convierte el apartamento del Nivel5 en una casa con la que se interactúa físicamente:
+/// - Todas las puertas de muebles (armario, nevera, gabinetes, fregadero, horno) empiezan cerradas y se abren
+///   agarrándolas y girándolas (<see cref="Level5HingeHandle"/>); todos los cajones empiezan cerrados y se deslizan
+///   (<see cref="Level5SlideHandle"/>). Las hojas y cajones tienen collider y son sólidos.
+/// - Los marcos de las puertas de paso dejan de ser una caja maciza: quedan dos jambas y el dintel, y la hoja
+///   (con su collider) es la que bloquea el paso cuando está cerrada.
+/// - La ventana se abre deslizando el cristal hacia arriba; detrás hay un exterior (edificios y suelo) y una barrera
+///   invisible impide salir por el hueco.
+/// - Giro por pasos y desplazamiento continuo con el stick.
+/// Ninguna tarea se completa por proximidad, por mirar ni por atravesar un trigger: las tareas las evalúa
+/// <see cref="Level5TaskInteraction"/> a partir del estado físico de estas piezas.
+/// Se crea solo en Nivel5; no modifica la escena guardada.
+/// </summary>
+public sealed class Level5InteractiveHome : MonoBehaviour
+{
+    public const string ApartmentName = "NP_L5_APARTAMENTO_VISUAL";
+    public const string WindowName = "NP_L5_WINDOW_VISUAL";
+    public const string WindowGlassName = "WindowGlass2m";
+    public const float WindowTravel = 0.62f;
+
+    // Puertas de paso: la de la entrada queda cerrada y bloqueada (es la salida del apartamento).
+    private static readonly string[] LockedDoors = { "Puerta principal" };
+
+    private static readonly List<Level5HingeHandle> hinges = new List<Level5HingeHandle>();
+    private static readonly List<Level5SlideHandle> slides = new List<Level5SlideHandle>();
+
+    public static IReadOnlyList<Level5HingeHandle> Hinges => hinges;
+    public static IReadOnlyList<Level5SlideHandle> Slides => slides;
+    public static Level5SlideHandle WindowSlide { get; private set; }
+    public static Vector3 WindowOutside { get; private set; }
+    public static bool Ready { get; private set; }
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+    private static void Initialize()
+    {
+        SceneManager.sceneLoaded -= OnSceneLoaded;
+        SceneManager.sceneLoaded += OnSceneLoaded;
+        OnSceneLoaded(SceneManager.GetActiveScene(), LoadSceneMode.Single);
+    }
+
+    private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        Ready = false;
+        hinges.Clear();
+        slides.Clear();
+        WindowSlide = null;
+        if (scene.name != "Nivel5") return;
+        if (FindFirstObjectByType<Level5InteractiveHome>() != null) return;
+        new GameObject("NP_Level5_InteractiveHome").AddComponent<Level5InteractiveHome>();
+    }
+
+    private void Awake()
+    {
+        Build();
+    }
+
+    /// <summary>Monta la casa. Idempotente: se puede llamar más de una vez.</summary>
+    public static void Build()
+    {
+        if (Ready) return;
+        GameObject apartment = GameObject.Find(ApartmentName);
+        if (apartment == null) return;
+
+        // Las tareas antiguas por proximidad o mirada quedan fuera (sus componentes se desactivan, no se borran).
+        foreach (Level5WindowGaze gaze in FindObjectsByType<Level5WindowGaze>(FindObjectsInactive.Include, FindObjectsSortMode.None)) gaze.enabled = false;
+
+        Transform[] all = apartment.GetComponentsInChildren<Transform>(true).ToArray();
+        // Primero los marcos (para que, al elegir el sentido de apertura, la caja maciza ya no estorbe) y los cajones.
+        foreach (Transform t in all.Where(t => t.name == "door_frame")) MakeFrameHollow(t);
+        foreach (Transform t in all.Where(t => IsDrawer(t.name.ToLowerInvariant()))) MakeDrawer(t);
+        foreach (Transform t in all)
+        {
+            string name = t.name.ToLowerInvariant();
+            if (IsLeaf(name) && !IsLocked(t)) MakeHinge(t, null, name == "door_body" ? 90f : 100f, closeFirst: name != "door_body");
+        }
+
+        SetUpWindow(apartment.transform);
+        UseSnapTurn();
+        Ready = true;
+    }
+
+    public static bool IsLeaf(string name)
+    {
+        if (name.EndsWith("_body") && name != "door_body") return false;
+        if (name.Contains("drawer") || name.Contains("dresser_dresser") || name.Contains("frame") || name.Contains("hinge")) return false;
+        if (name == "door_body") return true;
+        return name.Contains("_door") || name.EndsWith("leftdoor") || name.EndsWith("rightdoor");
+    }
+
+    public static bool IsDrawer(string name)
+    {
+        if (name.EndsWith("_body")) return false;
+        return name.Contains("_drawer") || name.Contains("dresser_dresser") ||
+               // Los «door1..3» del gabinete storage1 son en realidad cajones (anchos y bajos).
+               (name.StartsWith("storage1_door") && name != "storage1_door4");
+    }
+
+    public static bool IsLocked(Transform t)
+    {
+        for (Transform p = t; p != null; p = p.parent)
+            if (LockedDoors.Any(l => p.name.Trim() == l)) return true;
+        return false;
+    }
+
+    // ------------------------------------------------------------------ bisagras
+
+    /// <summary>
+    /// Añade a la hoja collider sólido, XRSimpleInteractable y bisagra. Si <paramref name="closeFirst"/>, la hoja de mueble
+    /// se cierra (giro local 0, la pose cerrada de los modelos de nappin). El sentido de apertura es el que aleja la hoja
+    /// del cuerpo del mueble.
+    /// </summary>
+    public static Level5HingeHandle MakeHinge(Transform leaf, Transform pivot, float maxAngle, bool closeFirst)
+    {
+        Level5HingeHandle existing = leaf.GetComponent<Level5HingeHandle>();
+        if (existing != null) return existing;
+
+        if (closeFirst)
+        {
+            Vector3 e = leaf.localEulerAngles;
+            leaf.localEulerAngles = new Vector3(e.x, 0f, e.z);
+        }
+
+        EnsureSolidCollider(leaf);
+        XRSimpleInteractable interactable = leaf.GetComponent<XRSimpleInteractable>();
+        if (interactable == null) interactable = leaf.gameObject.AddComponent<XRSimpleInteractable>();
+
+        Level5HingeHandle hinge = leaf.gameObject.AddComponent<Level5HingeHandle>();
+        hinge.leaf = leaf;
+        hinge.pivot = pivot;
+        hinge.openAngle = Mathf.Abs(maxAngle) * OpeningSign(leaf, pivot, maxAngle);
+        hinge.Initialize();
+        hinges.Add(hinge);
+        return hinge;
+    }
+
+    // Prueba los dos sentidos: gana el que, abierto, choca con menos cosas (el cuerpo del mueble, una pared);
+    // si empatan, el que deja el centro de la hoja más lejos del cuerpo del mueble o del marco.
+    private static float OpeningSign(Transform leaf, Transform pivot, float angle)
+    {
+        Physics.SyncTransforms();
+        int plus = OverlapsWhenOpen(leaf, pivot, Mathf.Abs(angle));
+        int minus = OverlapsWhenOpen(leaf, pivot, -Mathf.Abs(angle));
+        if (plus != minus) return plus < minus ? 1f : -1f;
+
+        Vector3 reference = BodyCenter(leaf);
+        Vector3 hinge = pivot != null ? pivot.position : leaf.position;
+        Vector3 center = LeafCenter(leaf);
+        Vector3 a = Quaternion.AngleAxis(Mathf.Abs(angle), Vector3.up) * (center - hinge) + hinge;
+        Vector3 b = Quaternion.AngleAxis(-Mathf.Abs(angle), Vector3.up) * (center - hinge) + hinge;
+        return Flat(a - reference).magnitude >= Flat(b - reference).magnitude ? 1f : -1f;
+    }
+
+    private static int OverlapsWhenOpen(Transform leaf, Transform pivot, float angle)
+    {
+        BoxCollider box = leaf.GetComponent<BoxCollider>();
+        if (box == null) return 0;
+        Vector3 hinge = pivot != null ? pivot.position : leaf.position;
+        Quaternion turn = Quaternion.AngleAxis(angle * 0.9f, Vector3.up);
+        Vector3 center = turn * (leaf.TransformPoint(box.center) - hinge) + hinge;
+        Vector3 half = Vector3.Scale(box.size, Abs(leaf.lossyScale)) * 0.45f;
+        Collider[] hits = Physics.OverlapBox(center, half, turn * leaf.rotation, ~0, QueryTriggerInteraction.Ignore);
+        int count = 0;
+        foreach (Collider hit in hits)
+        {
+            if (hit.transform == leaf || hit.transform.IsChildOf(leaf)) continue;
+            if (hit is CharacterController || hit.GetComponentInParent<Unity.XR.CoreUtils.XROrigin>() != null) continue;
+            count++;
+        }
+        return count;
+    }
+
+    private static Vector3 LeafCenter(Transform leaf)
+    {
+        Renderer renderer = leaf.GetComponent<Renderer>();
+        return renderer != null ? renderer.bounds.center : leaf.position;
+    }
+
+    private static Vector3 BodyCenter(Transform leaf)
+    {
+        Transform parent = leaf.parent;
+        if (parent != null)
+        {
+            Transform body = parent.Cast<Transform>().FirstOrDefault(c => c != leaf &&
+                (c.name.ToLowerInvariant().EndsWith("_body") || c.name == "door_frame"));
+            if (body != null && body.GetComponent<Renderer>() != null) return body.GetComponent<Renderer>().bounds.center;
+        }
+        return leaf.position + leaf.forward;
+    }
+
+    // ------------------------------------------------------------------ cajones
+
+    /// <summary>
+    /// Cierra el cajón a ras del frente del mueble y lo hace deslizable hacia fuera.
+    /// Eje de apertura: aquel (x o z del padre) en el que difieren las posiciones de los cajones hermanos (los modelos
+    /// traen unos cajones más fuera que otros); si todos coinciden, el fondo del mueble (su lado horizontal más corto).
+    /// Sentido: el lado por el que sobresalen. El cajón se desplaza para que su cara quede a ras de la del mueble.
+    /// </summary>
+    public static Level5SlideHandle MakeDrawer(Transform drawer)
+    {
+        Level5SlideHandle existing = drawer.GetComponent<Level5SlideHandle>();
+        if (existing != null) return existing;
+        Transform parent = drawer.parent;
+        Transform body = parent != null ? parent.Cast<Transform>().FirstOrDefault(c => c.name.ToLowerInvariant().EndsWith("_body")) : null;
+        Vector3 axis = Vector3.forward;
+        float depth = 0.3f;
+        if (body != null && TryLocalBounds(body, out Bounds bodyBounds) && TryLocalBounds(drawer, out Bounds drawerBounds))
+        {
+            Transform[] siblings = parent.Cast<Transform>().Where(c => IsDrawer(c.name.ToLowerInvariant()) &&
+                Quaternion.Angle(c.localRotation, drawer.localRotation) < 1f).ToArray();
+            float spreadX = siblings.Length > 1 ? siblings.Max(c => c.localPosition.x) - siblings.Min(c => c.localPosition.x) : 0f;
+            float spreadZ = siblings.Length > 1 ? siblings.Max(c => c.localPosition.z) - siblings.Min(c => c.localPosition.z) : 0f;
+            // Variación «de apertura»: pequeña (menos que el fondo del cajón); una variación grande es la fila de cajones.
+            float maxOpen = Mathf.Max(drawerBounds.size.x, drawerBounds.size.z);
+            bool openX = spreadX > 0.01f && spreadX < maxOpen * 0.9f && (spreadX >= spreadZ || spreadZ >= maxOpen * 0.9f);
+            bool openZ = spreadZ > 0.01f && spreadZ < maxOpen * 0.9f && !openX;
+            Vector3 along = openX ? Vector3.right : openZ ? Vector3.forward
+                : (bodyBounds.size.x < bodyBounds.size.z ? Vector3.right : Vector3.forward);
+            // Frente = el lado por el que algún cajón hermano sobresale más del mueble (los abiertos sobresalen por delante;
+            // por detrás quedan metidos tras el fondo).
+            float best = float.MinValue;
+            float side = 1f;
+            foreach (float s in new[] { 1f, -1f })
+            {
+                float most = float.MinValue;
+                foreach (Transform sibling in siblings)
+                    if (TryLocalBounds(sibling, out Bounds b)) most = Mathf.Max(most, Face(b, along * s) - Face(bodyBounds, along * s));
+                if (most > best) { best = most; side = s; }
+            }
+            axis = along * side;
+            // Referencia de «cerrado»: la cara del hermano más metido si ese ya está cerrado (sobresale menos de 10 cm,
+            // lo que mide su tirador); si todos están abiertos, la cara del mueble.
+            float bodyFace = Face(bodyBounds, axis);
+            float innermost = float.MaxValue;
+            foreach (Transform sibling in siblings)
+                if (TryLocalBounds(sibling, out Bounds b)) innermost = Mathf.Min(innermost, Face(b, axis));
+            float reference = innermost - bodyFace <= 0.1f ? innermost : bodyFace;
+            float protrusion = Face(drawerBounds, axis) - reference;
+            depth = Vector3.Dot(drawerBounds.size, Abs(axis));
+            if (Mathf.Abs(protrusion) < depth) drawer.localPosition -= axis * protrusion;
+        }
+
+        EnsureSolidCollider(drawer);
+        if (drawer.GetComponent<XRSimpleInteractable>() == null) drawer.gameObject.AddComponent<XRSimpleInteractable>();
+        Level5SlideHandle slide = drawer.gameObject.AddComponent<Level5SlideHandle>();
+        slide.part = drawer;
+        slide.localAxis = axis;
+        slide.travel = Mathf.Clamp(depth * 0.7f, 0.12f, 0.45f);
+        slide.Initialize();
+        slides.Add(slide);
+        return slide;
+    }
+
+    private static float Face(Bounds b, Vector3 side) => Vector3.Dot(side, b.center) + Vector3.Dot(Abs(side), b.extents);
+    private static Vector3 Abs(Vector3 v) => new Vector3(Mathf.Abs(v.x), Mathf.Abs(v.y), Mathf.Abs(v.z));
+
+    // Caja del objeto en el espacio de su padre. Se parte de Renderer.bounds (en el mundo): con el static batching,
+    // MeshFilter.sharedMesh de un cuerpo estático es la malla combinada del lote y sus límites no sirven.
+    private static bool TryLocalBounds(Transform t, out Bounds bounds)
+    {
+        bounds = default;
+        Renderer renderer = t.GetComponent<Renderer>();
+        if (renderer == null || t.parent == null) return false;
+        Bounds world = renderer.bounds;
+        bool first = true;
+        for (int i = 0; i < 8; i++)
+        {
+            Vector3 corner = world.center + Vector3.Scale(world.extents, new Vector3((i & 1) == 0 ? -1 : 1, (i & 2) == 0 ? -1 : 1, (i & 4) == 0 ? -1 : 1));
+            Vector3 p = t.parent.InverseTransformPoint(corner);
+            if (first) { bounds = new Bounds(p, Vector3.zero); first = false; }
+            else bounds.Encapsulate(p);
+        }
+        return true;
+    }
+
+    // ------------------------------------------------------------------ marcos y colliders
+
+    private static void EnsureSolidCollider(Transform t)
+    {
+        Collider collider = t.GetComponent<Collider>();
+        if (collider == null)
+        {
+            if (t.GetComponent<MeshFilter>() == null) return;
+            collider = t.gameObject.AddComponent<BoxCollider>();
+        }
+        collider.isTrigger = false;
+        collider.enabled = true;
+    }
+
+    // El marco era una caja maciza que tapaba el hueco: se sustituye por jambas y dintel.
+    private static void MakeFrameHollow(Transform frame)
+    {
+        BoxCollider box = frame.GetComponent<BoxCollider>();
+        if (box == null || frame.Find("NP_Jamba_Izquierda") != null) return;
+        Vector3 size = box.size;
+        Vector3 center = box.center;
+        bool widthOnX = size.x >= size.z;
+        float width = widthOnX ? size.x : size.z;
+        float depth = widthOnX ? size.z : size.x;
+        const float jamb = 0.08f;
+        const float header = 0.12f;
+        Vector3 along = widthOnX ? Vector3.right : Vector3.forward;
+        Vector3 across = widthOnX ? Vector3.forward : Vector3.right;
+
+        AddBox(frame, "NP_Jamba_Izquierda", center - along * (width / 2f - jamb / 2f), along * jamb + across * depth + Vector3.up * size.y);
+        AddBox(frame, "NP_Jamba_Derecha", center + along * (width / 2f - jamb / 2f), along * jamb + across * depth + Vector3.up * size.y);
+        AddBox(frame, "NP_Dintel", center + Vector3.up * (size.y / 2f - header / 2f), along * width + across * depth + Vector3.up * header);
+        box.enabled = false;
+    }
+
+    private static void AddBox(Transform parent, string name, Vector3 localCenter, Vector3 localSize)
+    {
+        GameObject go = new GameObject(name);
+        go.transform.SetParent(parent, false);
+        BoxCollider collider = go.AddComponent<BoxCollider>();
+        collider.center = localCenter;
+        collider.size = localSize;
+    }
+
+    // ------------------------------------------------------------------ ventana
+
+    private static void SetUpWindow(Transform apartment)
+    {
+        Transform window = apartment.GetComponentsInChildren<Transform>(true).FirstOrDefault(t => t.name == WindowName);
+        if (window == null) return;
+        Transform glass = window.GetComponentsInChildren<Transform>(true).FirstOrDefault(t => t.name == WindowGlassName);
+        Transform wall = window.GetComponentsInChildren<Transform>(true).FirstOrDefault(t => t.name == "WallWindow2m");
+
+        // El muro de la ventana no tenía collider: se le pone uno con la forma de la malla (respeta el hueco).
+        if (wall != null && wall.GetComponent<Collider>() == null && wall.GetComponent<MeshFilter>() != null)
+            wall.gameObject.AddComponent<MeshCollider>().sharedMesh = wall.GetComponent<MeshFilter>().sharedMesh;
+
+        if (glass != null)
+        {
+            EnsureSolidCollider(glass);
+            if (glass.GetComponent<XRSimpleInteractable>() == null) glass.gameObject.AddComponent<XRSimpleInteractable>();
+            Level5SlideHandle slide = glass.GetComponent<Level5SlideHandle>();
+            if (slide == null) slide = glass.gameObject.AddComponent<Level5SlideHandle>();
+            slide.part = glass;
+            slide.localAxis = glass.parent != null ? glass.parent.InverseTransformDirection(Vector3.up) : Vector3.up;
+            slide.travel = WindowTravel;
+            slide.Initialize();
+            WindowSlide = slide;
+
+            Level5TaskInteraction task = glass.GetComponent<Level5TaskInteraction>();
+            if (task == null) task = glass.gameObject.AddComponent<Level5TaskInteraction>();
+            task.taskId = "TASK_WINDOW";
+            if (task.taskManager == null) task.taskManager = FindFirstObjectByType<TaskManager>();
+            task.slide = slide;
+
+            Renderer glassRenderer = glass.GetComponent<Renderer>();
+            // El cristal era casi un espejo (metálico 0,77, suavidad 0,97) y solo reflejaba el cielo: se deja como vidrio
+            // normal para que se vea el exterior.
+            if (glassRenderer != null)
+            {
+                var block = new MaterialPropertyBlock();
+                glassRenderer.GetPropertyBlock(block);
+                block.SetFloat("_Metallic", 0f);
+                block.SetFloat("_Smoothness", 0.55f);
+                glassRenderer.SetPropertyBlock(block);
+            }
+            Bounds opening = glassRenderer != null ? glassRenderer.bounds : new Bounds(glass.position, Vector3.one);
+            Vector3 outside = OutsideDirection(opening, apartment);
+            WindowOutside = outside;
+            AddWindowBarrier(window, opening, outside);
+            Level5WindowExterior.Build(window, opening, outside);
+            if (Level5SpiderSettings.Load().windowSpider) AddWindowSpider(glass, opening, outside);
+        }
+    }
+
+    /// <summary>
+    /// Dirección hacia el exterior: la normal horizontal del cristal (su eje más delgado), con el sentido que se aleja
+    /// del centro del apartamento.
+    /// </summary>
+    public static Vector3 OutsideDirection(Bounds glass, Transform apartment)
+    {
+        Bounds all = new Bounds(glass.center, Vector3.zero);
+        foreach (Renderer r in apartment.GetComponentsInChildren<Renderer>()) all.Encapsulate(r.bounds);
+        Vector3 toCenter = Flat(all.center - glass.center);
+        if (glass.size.x <= glass.size.z) return new Vector3(toCenter.x > 0f ? -1f : 1f, 0f, 0f);
+        return new Vector3(0f, 0f, toCenter.z > 0f ? -1f : 1f);
+    }
+
+    // Barrera invisible un poco por fuera del cristal: con la ventana abierta no se puede salir por el hueco.
+    private static void AddWindowBarrier(Transform window, Bounds opening, Vector3 outside)
+    {
+        if (window.Find("NP_L5_Ventana_Barrera") != null) return;
+        GameObject barrier = new GameObject("NP_L5_Ventana_Barrera");
+        barrier.transform.SetParent(window, true);
+        barrier.transform.position = opening.center + outside * 0.12f + Vector3.up * WindowTravel * 0.5f;
+        BoxCollider box = barrier.AddComponent<BoxCollider>();
+        Vector3 size = opening.size + Vector3.up * WindowTravel;
+        box.size = new Vector3(Mathf.Abs(outside.x) > 0.5f ? 0.05f : size.x + 0.2f, size.y, Mathf.Abs(outside.z) > 0.5f ? 0.05f : size.z + 0.2f);
+        // En la capa «Ignore Raycast»: no tapa el rayo de los mandos ni la mirada.
+        barrier.layer = 2;
+    }
+
+    public const string WindowSpiderName = "NP_L5_Arana_Ventana";
+
+    // Araña posada en la cara exterior del cristal, con la cabeza hacia arriba; sube con el cristal al abrir.
+    // Es un clon quieto de la araña del nivel (sin patrulla ni colliders): no camina ni la empuja nadie.
+    private static void AddWindowSpider(Transform glass, Bounds opening, Vector3 outside)
+    {
+        if (GameObject.Find(WindowSpiderName) != null) return;
+        Transform original = FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None)
+            .FirstOrDefault(t => t.name == "NP_Spider_Level5_Central");
+        if (original == null) return;
+        GameObject spider = Instantiate(original.gameObject);
+        spider.name = WindowSpiderName;
+        // Mismo tamaño que las demás arañas del nivel (Level5CompanionSpiders escala su visualRoot igual).
+        var patrol = spider.GetComponent<NeuroPhobia.Level45.NPNaturalSpiderPatrol>();
+        if (patrol != null && patrol.visualRoot != null) patrol.visualRoot.localScale *= Level5SpiderSettings.Load().visualScale;
+        foreach (MonoBehaviour behaviour in spider.GetComponentsInChildren<MonoBehaviour>(true))
+            if (behaviour.GetType().Name.Contains("Patrol")) DestroyImmediate(behaviour);
+        foreach (Collider collider in spider.GetComponentsInChildren<Collider>(true)) DestroyImmediate(collider);
+        foreach (Rigidbody body in spider.GetComponentsInChildren<Rigidbody>(true)) body.isKinematic = true;
+        foreach (Animator animator in spider.GetComponentsInChildren<Animator>(true)) animator.speed = 0.15f;
+        spider.transform.SetPositionAndRotation(
+            new Vector3(opening.center.x, opening.min.y + opening.size.y * 0.35f, opening.center.z) + outside * 0.04f,
+            Quaternion.LookRotation(Vector3.up, outside));
+        spider.transform.SetParent(glass, true);
+        spider.SetActive(true);
+    }
+
+    // ------------------------------------------------------------------ locomoción
+
+    /// <summary>Desplazamiento continuo con el stick izquierdo y giro por pasos con el derecho.</summary>
+    private static void UseSnapTurn()
+    {
+        foreach (MonoBehaviour behaviour in FindObjectsByType<MonoBehaviour>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            if (behaviour.GetType().Name != "ControllerInputActionManager") continue;
+            SetBool(behaviour, "smoothTurnEnabled", false);
+            SetBool(behaviour, "smoothMotionEnabled", true);
+        }
+    }
+
+    private static void SetBool(object target, string property, bool value)
+    {
+        var info = target.GetType().GetProperty(property);
+        if (info != null && info.CanWrite) info.SetValue(target, value);
+    }
+
+    private static Vector3 Flat(Vector3 v) { v.y = 0f; return v; }
+}

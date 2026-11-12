@@ -10,12 +10,12 @@ public class Level5HUD : MonoBehaviour
     public TMP_Text completionText;
     public Button finishButton;
 
-    // El canvas de la escena es de mundo y queda fijo cerca del origen; el jugador empieza a ~10 m y el texto se ve diminuto.
-    // Se pega a la cámara, abajo a la izquierda, con textos más grandes y separados.
-    private static readonly Vector3 HeadLocalPosition = new Vector3(-0.6f, -0.34f, 1.3f);
-    private const float HeadLocalScale = 0.0012f;
+    // El canvas de la escena es de mundo y quedaba fijo cerca del origen. Ahora sigue la vista con retardo, a 2,1 m,
+    // abajo a la izquierda, sin tapar el centro (NeuroPhobiaHudFollow).
+    private static readonly Vector2 HudSize = new Vector2(760f, 520f);
+    private static readonly Vector2 HudOffset = new Vector2(-0.62f, -0.40f);
+    private const float HudWidthMeters = 0.72f;
     private Canvas worldCanvas;
-    private Camera followedCamera;
 
     private void Start()
     {
@@ -27,29 +27,12 @@ public class Level5HUD : MonoBehaviour
         if (manager != null) manager.RefreshHUD();
     }
 
-    private void LateUpdate()
-    {
-        if (worldCanvas == null) return;
-
-        Camera camera = Camera.main;
-        if (camera == null || !camera.isActiveAndEnabled || camera == followedCamera) return;
-
-        followedCamera = camera;
-        Transform t = worldCanvas.transform;
-        t.SetParent(camera.transform, false);
-        t.localPosition = HeadLocalPosition;
-        t.localRotation = Quaternion.identity;
-        t.localScale = Vector3.one * HeadLocalScale;
-        worldCanvas.worldCamera = camera;
-    }
-
     private void SetUpHeadHud()
     {
         worldCanvas = GetComponent<Canvas>();
         if (worldCanvas == null || worldCanvas.renderMode != RenderMode.WorldSpace) { worldCanvas = null; return; }
 
-        RectTransform rect = (RectTransform)transform;
-        rect.sizeDelta = new Vector2(760f, 520f);
+        NeuroPhobiaHudFollow.Attach(worldCanvas, HudSize, HudOffset, HudWidthMeters);
 
         Image background = GetComponent<Image>();
         if (background == null) background = gameObject.AddComponent<Image>();
@@ -72,17 +55,10 @@ public class Level5HUD : MonoBehaviour
 
     private void BuildHud()
     {
-        Camera camera = Camera.main;
-        if (camera == null) return;
         GameObject panel = new GameObject("Nivel5_Tareas", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(Image));
-        panel.transform.SetParent(camera.transform, false);
-        panel.transform.localPosition = new Vector3(-.42f, -.18f, 1.6f);
-        panel.transform.localRotation = Quaternion.identity;
-        panel.transform.localScale = Vector3.one * .001f;
-        RectTransform rect = panel.GetComponent<RectTransform>();
-        rect.sizeDelta = new Vector2(430, 420);
-        panel.GetComponent<Canvas>().renderMode = RenderMode.WorldSpace;
+        NeuroPhobiaHudFollow.Attach(panel.GetComponent<Canvas>(), new Vector2(430, 420), HudOffset, 0.6f);
         panel.GetComponent<Image>().color = new Color(.04f, .06f, .08f, .87f);
+        panel.GetComponent<Image>().raycastTarget = false;
         taskProgressText = MakeText(panel.transform, "Tareas", new Vector2(0, 0), new Vector2(390, 245), 25);
         instructionText = MakeText(panel.transform, "Nivel", new Vector2(0, 170), new Vector2(390, 50), 32);
         completionText = MakeText(panel.transform, "Estado", new Vector2(0, -165), new Vector2(390, 60), 17);
@@ -113,7 +89,7 @@ public class Level5HUD : MonoBehaviour
             $"Tareas completadas: {done.Count} / {total}";
     }
 
-    private static string Mark(HashSet<string> done, string id, string name) => (done.Contains(id) ? "[✓] " : "[ ] ") + name;
+    private static string Mark(HashSet<string> done, string id, string name) => (done.Contains(id) ? "[x] " : "[ ] ") + name;
 
     public void ShowAvoidanceLimit(int maximum)
     {

@@ -17,7 +17,7 @@ namespace NeuroPhobia.Tests
 {
     /// <summary>
     /// Pruebas del recorrido de Nivel5: colliders activos, jugador dentro del apartamento,
-    /// menú pegado a la cámara y XR Device Simulator fuera de las escenas del build.
+    /// y XR Device Simulator fuera de las escenas del build. Los menús se prueban en MenusPlayModeTests.
     /// </summary>
     public class RecorridoPlayModeTests
     {
@@ -51,6 +51,8 @@ namespace NeuroPhobia.Tests
         }
 
         // Paredes, techos, suelo de fábrica y mobiliario: ningún collider activo en la jerarquía puede estar apagado.
+        // Excepciones sustituidas a propósito por la casa interactiva: la caja maciza de los marcos de puerta (ahora
+        // jambas y dintel) y la caja-botón de los objetos de tarea (ahora cuentan los colliders de sus piezas).
         [UnityTest]
         public IEnumerator Nivel5_NingunColliderDeParedesSuelosOMueblesEstaDesactivado()
         {
@@ -62,7 +64,11 @@ namespace NeuroPhobia.Tests
             var apagados = new List<string>();
             foreach (Collider collider in apartment.GetComponentsInChildren<Collider>(false))
             {
-                if (!collider.enabled) apagados.Add(PathOf(collider.transform));
+                if (collider.enabled) continue;
+                bool frameReplaced = collider.name == "door_frame" && collider.transform.Find("NP_Jamba_Izquierda") != null;
+                bool taskButton = collider.GetComponent(Game("Level5TaskInteraction")) != null &&
+                                  collider.GetComponentsInChildren<Collider>().Any(c => c != collider && c.enabled);
+                if (!frameReplaced && !taskButton) apagados.Add(PathOf(collider.transform));
             }
             Assert.IsEmpty(apagados, apagados.Count + " colliders desactivados en el apartamento:\n" + string.Join("\n", apagados.Take(15)));
 
@@ -119,24 +125,6 @@ namespace NeuroPhobia.Tests
                 bool hitSolid = Physics.Raycast(point + Vector3.up, Vector3.down, out RaycastHit hit, 3f, ~0, QueryTriggerInteraction.Ignore);
                 Assert.IsTrue(hitSolid, "No hay suelo sólido bajo " + point);
                 Assert.Less(Mathf.Abs(hit.point.y), 0.2f, "El suelo bajo " + point + " está a y=" + hit.point.y);
-            }
-        }
-
-        // El menú de pausa va pegado a la cámara (como el HUD) y no en el mundo.
-        [UnityTest]
-        public IEnumerator Menu_VaPegadoALaCamara_NoEnElMundo()
-        {
-            yield return Load(ScenePath);
-
-            UnityEngine.Object ui = UnityEngine.Object.FindFirstObjectByType(Game("GlobalSessionUI"), FindObjectsInactive.Include);
-            Assert.IsNotNull(ui, "No existe GlobalSessionUI.");
-            Canvas canvas = ((Component)ui).GetComponent<Canvas>();
-            Assert.IsNotNull(canvas, "GlobalSessionUI no tiene Canvas.");
-            Assert.AreNotEqual(RenderMode.WorldSpace, canvas.renderMode, "El menú sigue en el espacio del mundo y la geometría lo tapa.");
-            if (canvas.renderMode == RenderMode.ScreenSpaceCamera)
-            {
-                Assert.IsNotNull(canvas.worldCamera, "El menú no tiene cámara.");
-                Assert.Less(canvas.planeDistance, 1f, "El menú está lejos de la cámara.");
             }
         }
 

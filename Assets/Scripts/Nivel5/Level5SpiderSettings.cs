@@ -53,6 +53,10 @@ public sealed class Level5SpiderSettings : ScriptableObject
     [Tooltip("Radio (m) de deambulación alrededor de su sitio. Pendiente de validar clínicamente.")]
     public float wanderRadius = 1.4f;
 
+    [Header("Ventana (decisión de Sara 2026-11-11, pendiente de validar clínicamente)")]
+    [Tooltip("Una araña posada por fuera del cristal de la ventana. No camina ni cuenta en el número por grado.")]
+    public bool windowSpider = true;
+
     [Header("Puerta (TASK_DOOR)")]
     [Tooltip("Si es true la puerta se abre sola al acercarse el jugador. Sara pidió que se abra solo con el gesto: false.")]
     public bool doorOpensOnApproach = false;
