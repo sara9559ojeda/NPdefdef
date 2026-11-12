@@ -87,7 +87,9 @@ public sealed class Level5InteractiveHome : MonoBehaviour
         foreach (Transform t in all)
         {
             string name = t.name.ToLowerInvariant();
-            if (IsLeaf(name) && !IsLocked(t)) MakeHinge(t, null, name == "door_body" ? 90f : 100f, closeFirst: name != "door_body");
+            // La puerta del horno se abre hacia abajo (eje horizontal): no es de ninguna tarea y queda cerrada y sólida.
+            if (name == "stove_door") { Vector3 e = t.localEulerAngles; t.localEulerAngles = new Vector3(e.x, 0f, e.z); EnsureSolidCollider(t); continue; }
+            if (IsLeaf(name) && !IsLocked(t)) MakeHinge(t, null, 90f, closeFirst: name != "door_body");
         }
 
         SetUpWindow(apartment.transform);
@@ -100,6 +102,8 @@ public sealed class Level5InteractiveHome : MonoBehaviour
 
     public static bool IsLeaf(string name)
     {
+        // Los cajones de los gabinetes se llaman «storage1_door1..3»: son cajones, nunca hojas con bisagra.
+        if (IsDrawer(name)) return false;
         if (name.EndsWith("_body") && name != "door_body") return false;
         if (name.Contains("drawer") || name.Contains("dresser_dresser") || name.Contains("frame") || name.Contains("hinge")) return false;
         if (name == "door_body") return true;
@@ -156,6 +160,21 @@ public sealed class Level5InteractiveHome : MonoBehaviour
     // si empatan, el que deja el centro de la hoja más lejos del cuerpo del mueble o del marco.
     private static float OpeningSign(Transform leaf, Transform pivot, float angle)
     {
+        // Mueble (la hoja tiene un «_body» hermano): la hoja abierta debe quedar DELANTE del mueble, nunca dentro.
+        // El frente es la cara del cuerpo en la que está la hoja cerrada.
+        Renderer body = BodyRenderer(leaf);
+        if (body != null)
+        {
+            Vector3 front = FrontOf(body.bounds, LeafCenter(leaf));
+            Vector3 hingePoint = pivot != null ? pivot.position : leaf.position;
+            Vector3 closed = LeafCenter(leaf);
+            Vector3 plusCenter = Quaternion.AngleAxis(Mathf.Abs(angle), Vector3.up) * (closed - hingePoint) + hingePoint;
+            Vector3 minusCenter = Quaternion.AngleAxis(-Mathf.Abs(angle), Vector3.up) * (closed - hingePoint) + hingePoint;
+            float plusGain = Vector3.Dot(plusCenter - closed, front);
+            float minusGain = Vector3.Dot(minusCenter - closed, front);
+            if (Mathf.Abs(plusGain - minusGain) > 0.01f) return plusGain > minusGain ? 1f : -1f;
+        }
+
         Physics.SyncTransforms();
         int plus = OverlapsWhenOpen(leaf, pivot, Mathf.Abs(angle));
         int minus = OverlapsWhenOpen(leaf, pivot, -Mathf.Abs(angle));
@@ -167,6 +186,22 @@ public sealed class Level5InteractiveHome : MonoBehaviour
         Vector3 a = Quaternion.AngleAxis(Mathf.Abs(angle), Vector3.up) * (center - hinge) + hinge;
         Vector3 b = Quaternion.AngleAxis(-Mathf.Abs(angle), Vector3.up) * (center - hinge) + hinge;
         return Flat(a - reference).magnitude >= Flat(b - reference).magnitude ? 1f : -1f;
+    }
+
+    private static Renderer BodyRenderer(Transform leaf)
+    {
+        if (leaf.parent == null) return null;
+        Transform body = leaf.parent.Cast<Transform>().FirstOrDefault(c => c != leaf && c.name.ToLowerInvariant().EndsWith("_body") && c.name != "door_body");
+        return body != null ? body.GetComponent<Renderer>() : null;
+    }
+
+    // Cara del cuerpo (±x o ±z del mundo; los muebles van alineados con los ejes) en la que está la hoja cerrada.
+    private static Vector3 FrontOf(Bounds body, Vector3 leafCenter)
+    {
+        Vector3 offset = leafCenter - body.center;
+        float x = Mathf.Abs(offset.x) / Mathf.Max(0.01f, body.extents.x);
+        float z = Mathf.Abs(offset.z) / Mathf.Max(0.01f, body.extents.z);
+        return x >= z ? new Vector3(Mathf.Sign(offset.x), 0f, 0f) : new Vector3(0f, 0f, Mathf.Sign(offset.z));
     }
 
     private static int OverlapsWhenOpen(Transform leaf, Transform pivot, float angle)

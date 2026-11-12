@@ -17,7 +17,7 @@ public static class NeuroPhobiaWorldPanel
     public const float EyeDrop = 0.08f;
 
     /// <summary>Pasa el lienzo a World Space con un tamaño físico fijo (anchura en metros) y lo deja interactuable con el rayo.</summary>
-    public static void MakeWorldSpace(Canvas canvas, Vector2 size, float widthMeters, Camera eventCamera)
+    public static void MakeWorldSpace(Canvas canvas, Vector2 size, float widthMeters, Camera eventCamera, bool interactive = true, int sortingOrder = 0)
     {
         if (canvas == null) return;
         canvas.renderMode = RenderMode.WorldSpace;
@@ -34,6 +34,10 @@ public static class NeuroPhobiaWorldPanel
             scaler.dynamicPixelsPerUnit = 3f;
         }
 
+        // El orden de dibujo se fija ANTES de añadir los raycasters: TrackedDeviceGraphicRaycaster se registra con el
+        // estado del lienzo y, si este cambia después, al desactivarse lanza KeyNotFoundException.
+        if (sortingOrder != 0) canvas.sortingOrder = sortingOrder;
+        if (!interactive) return;   // un HUD informativo no necesita recibir el rayo
         if (canvas.GetComponent<TrackedDeviceGraphicRaycaster>() == null) canvas.gameObject.AddComponent<TrackedDeviceGraphicRaycaster>();
         if (canvas.GetComponent<GraphicRaycaster>() == null) canvas.gameObject.AddComponent<GraphicRaycaster>();
     }

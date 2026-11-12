@@ -291,7 +291,14 @@ public sealed class GlobalSessionUI : MonoBehaviour
     {
         if (canvas == null) return;
         Camera main = NeuroPhobiaWorldPanel.GameplayCamera();
-        if (main != null && canvas.worldCamera != main) canvas.worldCamera = main;
+        if (main == null || canvas.worldCamera == main) return;
+        // TrackedDeviceGraphicRaycaster se registra con la cámara del lienzo: se desactiva y reactiva al cambiarla
+        // (si no, al salir lanza KeyNotFoundException).
+        TrackedDeviceGraphicRaycaster tracked = GetComponent<TrackedDeviceGraphicRaycaster>();
+        bool wasEnabled = tracked != null && tracked.enabled;
+        if (wasEnabled) tracked.enabled = false;
+        canvas.worldCamera = main;
+        if (wasEnabled) tracked.enabled = true;
     }
 
     /// <summary>Panel visible ahora (null si no hay ninguno).</summary>
@@ -347,8 +354,7 @@ public sealed class GlobalSessionUI : MonoBehaviour
         gameObject.AddComponent<CanvasScaler>();
         // En el espacio del mundo, de tamaño fijo: la hoja de papel y los textos forman un solo bloque y el rayo de
         // cualquiera de los dos mandos (TrackedDeviceGraphicRaycaster) y el ratón (GraphicRaycaster) lo pulsan.
-        NeuroPhobiaWorldPanel.MakeWorldSpace(canvas, CanvasSize, PanelWidthMeters, camera);
-        canvas.sortingOrder = 32000;
+        NeuroPhobiaWorldPanel.MakeWorldSpace(canvas, CanvasSize, PanelWidthMeters, camera, interactive: true, sortingOrder: 32000);
         if (camera != null) PlaceInFront(camera.transform);
 
         pauseButton = Button("Pausa", transform, "PAUSA", new Vector2(415,270), new Vector2(150,58), ShowPause);

@@ -48,12 +48,14 @@ public sealed class Level5LampSwitch : MonoBehaviour
         go.transform.position = position;
         go.transform.rotation = Quaternion.LookRotation(toward, Vector3.up);
         go.transform.localScale = Vector3.one;
-        go.transform.localScale = new Vector3(0.09f / Mathf.Max(0.0001f, lamp.lossyScale.x), 0.12f / Mathf.Max(0.0001f, lamp.lossyScale.y), 0.05f / Mathf.Max(0.0001f, lamp.lossyScale.z));
+        // Botón de 12 x 16 cm, amarillo y sin sombreado (material Unlit de Resources): se ve aunque la sala esté oscura.
+        go.transform.localScale = new Vector3(0.12f / Mathf.Max(0.0001f, lamp.lossyScale.x), 0.16f / Mathf.Max(0.0001f, lamp.lossyScale.y), 0.06f / Mathf.Max(0.0001f, lamp.lossyScale.z));
         Renderer lampRenderer = lamp.GetComponentInChildren<Renderer>();
         MeshRenderer renderer = go.GetComponent<MeshRenderer>();
-        if (lampRenderer != null) renderer.sharedMaterial = lampRenderer.sharedMaterial;
+        Material unlit = Resources.Load<Material>("NeuroPhobiaExterior");
+        renderer.sharedMaterial = unlit != null ? unlit : lampRenderer != null ? lampRenderer.sharedMaterial : renderer.sharedMaterial;
         var block = new MaterialPropertyBlock();
-        block.SetColor(BaseColor, new Color(.85f, .72f, .30f));
+        block.SetColor(BaseColor, new Color(.95f, .76f, .18f));
         renderer.SetPropertyBlock(block);
 
         go.AddComponent<XRSimpleInteractable>();

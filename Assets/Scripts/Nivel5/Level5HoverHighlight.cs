@@ -33,11 +33,15 @@ public sealed class Level5HoverHighlight : MonoBehaviour
 
     private void Awake()
     {
+        var block = new MaterialPropertyBlock();
         foreach (Renderer r in GetComponentsInChildren<Renderer>())
         {
             if (r.sharedMaterial == null || !r.sharedMaterial.HasProperty(BaseColor)) continue;
             renderers.Add(r);
-            originals.Add(r.sharedMaterial.GetColor(BaseColor));
+            // Si la pieza ya tiene un color propio en su MaterialPropertyBlock (p. ej. el interruptor amarillo), se respeta.
+            r.GetPropertyBlock(block);
+            originals.Add(block.HasColor(BaseColor) ? block.GetColor(BaseColor) : r.sharedMaterial.GetColor(BaseColor));
+            block.Clear();
         }
         interactable = GetComponent<XRSimpleInteractable>();
         interactable.hoverEntered.AddListener(OnHoverEntered);

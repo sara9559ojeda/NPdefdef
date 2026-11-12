@@ -26,6 +26,7 @@ public sealed class Level5HingeHandle : MonoBehaviour
     private float grabOffset;
     private Vector3 closedLocalPosition;
     private Quaternion closedLocalRotation;
+    private Vector3 hingeLocalPoint;
     private bool initialized;
 
     public float Angle => angle;
@@ -44,6 +45,9 @@ public sealed class Level5HingeHandle : MonoBehaviour
         if (leaf == null) leaf = transform;
         closedLocalPosition = leaf.localPosition;
         closedLocalRotation = leaf.localRotation;
+        // Punto de la bisagra guardado en el espacio del padre (si el padre se mueve, la bisagra lo acompaña).
+        Vector3 hingeWorld = pivot != null ? pivot.position : leaf.position;
+        hingeLocalPoint = leaf.parent != null ? leaf.parent.InverseTransformPoint(hingeWorld) : hingeWorld;
         interactable = GetComponent<XRSimpleInteractable>();
         interactable.selectEntered.AddListener(OnGrab);
         interactable.selectExited.AddListener(OnRelease);
@@ -83,16 +87,18 @@ public sealed class Level5HingeHandle : MonoBehaviour
         angle = Mathf.Clamp(value, min, max);
 
         // Se parte siempre de la pose cerrada para no acumular errores.
+        // Siempre alrededor del eje VERTICAL DEL MUNDO que pasa por la bisagra, el mismo que se usa para elegir el
+        // sentido de apertura. (Girar sobre el eje local invertía el sentido en muebles girados o reflejados.)
         leaf.localPosition = closedLocalPosition;
         leaf.localRotation = closedLocalRotation;
-        if (pivot != null) leaf.RotateAround(pivot.position, Vector3.up, angle);
-        else leaf.localRotation = closedLocalRotation * Quaternion.Euler(0f, angle, 0f);
+        Vector3 hinge = leaf.parent != null ? leaf.parent.TransformPoint(hingeLocalPoint) : hingeLocalPoint;
+        leaf.RotateAround(hinge, Vector3.up, angle);
     }
 
     // Ángulo de la mano alrededor del eje vertical de la bisagra (plano horizontal).
     private float HandAngle(Vector3 hand)
     {
-        Vector3 center = pivot != null ? pivot.position : leaf.position;
+        Vector3 center = leaf.parent != null ? leaf.parent.TransformPoint(hingeLocalPoint) : hingeLocalPoint;
         Vector3 flat = hand - center;
         flat.y = 0f;
         if (flat.sqrMagnitude < 0.0001f) return angle;

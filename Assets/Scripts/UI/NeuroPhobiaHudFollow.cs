@@ -27,7 +27,7 @@ public sealed class NeuroPhobiaHudFollow : MonoBehaviour
         Camera camera = NeuroPhobiaWorldPanel.GameplayCamera();
         if (canvas.transform.parent != null && camera != null && canvas.transform.IsChildOf(camera.transform))
             canvas.transform.SetParent(null, true);
-        NeuroPhobiaWorldPanel.MakeWorldSpace(canvas, size, widthMeters, camera);
+        NeuroPhobiaWorldPanel.MakeWorldSpace(canvas, size, widthMeters, camera, interactive: false, sortingOrder: canvas.sortingOrder);
         NeuroPhobiaHudFollow follow = canvas.GetComponent<NeuroPhobiaHudFollow>();
         if (follow == null) follow = canvas.gameObject.AddComponent<NeuroPhobiaHudFollow>();
         follow.widthMeters = widthMeters;
