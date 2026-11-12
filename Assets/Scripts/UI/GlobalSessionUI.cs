@@ -11,8 +11,11 @@ using UI = NeuroPhobiaUITheme;
 /// <summary>Una sola interfaz de sesión por escena jugable; no modifica las escenas XR.</summary>
 public sealed class GlobalSessionUI : MonoBehaviour
 {
-    private const float MenuPlaneDistance = 0.45f;
-    private const float MenuScale = 0.75f;
+    // Panel en el mundo: 1000×650 unidades de lienzo = 1,25 m de ancho, a 1,7 m y a la altura de los ojos.
+    // (Pegado a la cámara a 0,45 m quedaba demasiado cerca, el rayo de XRI no lo pulsaba y la hoja se separaba del texto.)
+    public static readonly Vector2 CanvasSize = new Vector2(1000f, 650f);
+    public const float PanelWidthMeters = 1.25f;
+    private const float RefollowAngle = 50f;
     private static GlobalSessionUI current;
     private Canvas canvas;
     private GameObject pausePanel;
@@ -35,6 +38,8 @@ public sealed class GlobalSessionUI : MonoBehaviour
     private float sceneStart;
     private bool completed;
     private string exitOutcome;
+    private GameObject shownPanel;
+    private float placedScale = 1f;
     // SUDS (ansiedad 0–100) antes y después de cada intento. Mientras el panel está abierto el juego queda en pausa.
     private GameObject sudsPanel;
     private TMP_Text sudsTitle;
@@ -281,38 +286,70 @@ public sealed class GlobalSessionUI : MonoBehaviour
         return metrics;
     }
 
-    // Si el jugador cambia de cámara (rig de escritorio o XR), el menú la sigue.
+    // Si el jugador cambia de cámara (rig de escritorio o XR), el menú la usa para los eventos y para colocarse.
     private void KeepCameraBinding()
     {
-        if (canvas == null || canvas.renderMode != RenderMode.ScreenSpaceCamera) return;
-        Camera main = Camera.main;
-        if (main != null && main.isActiveAndEnabled && canvas.worldCamera != main) canvas.worldCamera = main;
+        if (canvas == null) return;
+        Camera main = NeuroPhobiaWorldPanel.GameplayCamera();
+        if (main != null && canvas.worldCamera != main) canvas.worldCamera = main;
+    }
+
+    /// <summary>Panel visible ahora (null si no hay ninguno).</summary>
+    private GameObject VisiblePanel()
+    {
+        GameObject[] panels = { sudsPanel, pausePanel, confirmPanel, optionsPanel, resultPanel, repeatPanel, summaryPanel };
+        foreach (GameObject panel in panels) if (panel != null && panel.activeSelf) return panel;
+        return null;
+    }
+
+    // Al abrirse un panel (o cambiar de uno a otro) se coloca delante de la persona. Si luego gira la cabeza mucho,
+    // el panel la sigue con retardo para no quedarse a la espalda.
+    private void LateUpdate()
+    {
+        if (canvas == null || canvas.renderMode != RenderMode.WorldSpace) return;
+        GameObject visible = VisiblePanel();
+        if (visible == null) { shownPanel = null; return; }
+        Camera head = canvas.worldCamera != null ? canvas.worldCamera : NeuroPhobiaWorldPanel.GameplayCamera();
+        if (head == null) return;
+
+        if (visible != shownPanel)
+        {
+            shownPanel = visible;
+            PlaceInFront(head.transform);
+            return;
+        }
+
+        // Se recoloca si la persona gira mucho la cabeza o si la cámara se ha desplazado (p. ej. el apareo del jugador
+        // al empezar el nivel, o un teletransporte): el panel no se queda lejos, por encima o por debajo.
+        Vector3 offset = transform.position - head.transform.position;
+        Vector3 toPanel = offset; toPanel.y = 0f;
+        Vector3 look = head.transform.forward; look.y = 0f;
+        bool turned = toPanel.sqrMagnitude > 0.0001f && look.sqrMagnitude > 0.0001f && Vector3.Angle(toPanel, look) > RefollowAngle;
+        bool displaced = toPanel.magnitude > NeuroPhobiaWorldPanel.PanelDistance + 0.4f || Mathf.Abs(offset.y) > 0.45f;
+        if (turned || displaced) PlaceInFront(head.transform);
+    }
+
+    /// <summary>Coloca el lienzo delante de la cabeza, a la altura de los ojos y sin atravesar paredes.</summary>
+    public void PlaceInFront(Transform head)
+    {
+        float distance = NeuroPhobiaWorldPanel.PlaceInFront(transform, head, NeuroPhobiaWorldPanel.PanelDistance, Vector3.zero);
+        // Si una pared obliga a acercarlo, se reduce para conservar el mismo tamaño aparente.
+        placedScale = distance / NeuroPhobiaWorldPanel.PanelDistance;
+        transform.localScale = Vector3.one * (PanelWidthMeters / CanvasSize.x) * placedScale;
     }
 
     private void BuildCanvas()
     {
-        Camera camera = Camera.main != null ? Camera.main : FindFirstObjectByType<Camera>();
+        Camera camera = NeuroPhobiaWorldPanel.GameplayCamera();
         canvas = gameObject.AddComponent<Canvas>();
-        if (camera != null)
-        {
-            // Pegado a la cámara, como el HUD de los niveles: un lienzo en el mundo a 1,7 m
-            // quedaba tapado o atravesado por paredes y muebles.
-            canvas.renderMode = RenderMode.ScreenSpaceCamera;
-            canvas.worldCamera = camera;
-            canvas.planeDistance = MenuPlaneDistance;
-            CanvasScaler scaler = gameObject.AddComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
-            scaler.scaleFactor = MenuScale;
-        }
-        else canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.overrideSorting = true;
-        canvas.sortingOrder = 32000;
         RectTransform root = GetComponent<RectTransform>();
         if (root == null) root = gameObject.AddComponent<RectTransform>();
-        gameObject.AddComponent<TrackedDeviceGraphicRaycaster>();
-        // Sin GraphicRaycaster estándar los botones no responden al mouse/pantalla.
-        gameObject.AddComponent<GraphicRaycaster>();
-        if (camera != null) canvas.worldCamera = camera;
+        gameObject.AddComponent<CanvasScaler>();
+        // En el espacio del mundo, de tamaño fijo: la hoja de papel y los textos forman un solo bloque y el rayo de
+        // cualquiera de los dos mandos (TrackedDeviceGraphicRaycaster) y el ratón (GraphicRaycaster) lo pulsan.
+        NeuroPhobiaWorldPanel.MakeWorldSpace(canvas, CanvasSize, PanelWidthMeters, camera);
+        canvas.sortingOrder = 32000;
+        if (camera != null) PlaceInFront(camera.transform);
 
         pauseButton = Button("Pausa", transform, "PAUSA", new Vector2(415,270), new Vector2(150,58), ShowPause);
         // La pausa se abre solo con el botón del mando.
