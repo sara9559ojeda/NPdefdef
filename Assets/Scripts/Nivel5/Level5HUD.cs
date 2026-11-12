@@ -40,7 +40,7 @@ public class Level5HUD : MonoBehaviour
         background.raycastTarget = false;
 
         Layout(instructionText, new Vector2(0f, 215f), new Vector2(700f, 70f), 44f);
-        Layout(taskProgressText, new Vector2(0f, 10f), new Vector2(700f, 320f), 38f);
+        Layout(taskProgressText, new Vector2(0f, 0f), new Vector2(700f, 380f), 34f);
         Layout(completionText, new Vector2(0f, -215f), new Vector2(700f, 80f), 28f);
     }
 
@@ -86,8 +86,11 @@ public class Level5HUD : MonoBehaviour
             Mark(done, "TASK_DOOR", "Abrir puerta") + "\n" +
             Mark(done, "TASK_FRIDGE", "Abrir nevera") + "\n" +
             Mark(done, "TASK_WINDOW", "Abrir ventana") + "\n\n" +
-            $"Tareas completadas: {done.Count} / {total}";
+            $"Tareas completadas: {done.Count} / {total}" + "\n" + HowTo;
     }
+
+    // Cómo se interactúa: lo que se puede abrir o pulsar se ilumina al apuntarlo (Level5HoverHighlight).
+    public const string HowTo = "<size=60%>Lo que se puede abrir se ilumina al apuntarlo. Mantén el grip o el gatillo y gira o desliza la mano; el interruptor de la lámpara se pulsa.</size>";
 
     private static string Mark(HashSet<string> done, string id, string name) => (done.Contains(id) ? "[x] " : "[ ] ") + name;
 

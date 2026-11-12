@@ -537,6 +537,46 @@ namespace NeuroPhobia.Tests
             }
         }
 
+        // El rayo del mando detecta cada pieza: su collider pertenece a su propio interactable en el XRInteractionManager.
+        // (Antes, el interactable antiguo de la raíz de la nevera y de la puerta se quedaba con los colliders de las hojas
+        // y el rayo no las veía, aunque seleccionarlas por código funcionara.) Al apuntarlas se iluminan.
+        [UnityTest]
+        public IEnumerator Piezas_ElRayoLasDetecta_YSeIluminanAlApuntarlas()
+        {
+            yield return LoadLevel();
+            yield return WaitForSpiders();
+            var pieces = ((System.Collections.IList)Static("Level5InteractiveHome", "Hinges")).Cast<Component>()
+                .Concat(((System.Collections.IList)Static("Level5InteractiveHome", "Slides")).Cast<Component>())
+                .Append((Component)Get(Task("TASK_LAMP"), "lampSwitch")).ToList();
+            var failures = new System.Collections.Generic.List<string>();
+            foreach (Component piece in pieces)
+            {
+                XRSimpleInteractable interactable = piece.GetComponent<XRSimpleInteractable>();
+                Collider collider = piece.GetComponent<Collider>();
+                if (interactable.interactionManager == null ||
+                    !interactable.interactionManager.TryGetInteractableForCollider(collider, out IXRInteractable owner) ||
+                    !ReferenceEquals(owner, interactable))
+                    failures.Add(PathOf(piece.transform));
+                if (piece.GetComponent(Game("Level5HoverHighlight")) == null) failures.Add(PathOf(piece.transform) + " (sin resaltado)");
+            }
+            Assert.IsEmpty(failures, "Piezas que el rayo no detecta:\n" + string.Join("\n", failures));
+
+            // Un rayo real (XRRayInteractor) apuntando a la hoja de la nevera la detecta y la ilumina.
+            Component leaf = (Component)Get(Task("TASK_FRIDGE"), "hinge");
+            Vector3 target = leaf.GetComponent<Collider>().bounds.center;
+            Transform body = leaf.transform.parent.Find("fridge_body");
+            Vector3 front = Vector3.ProjectOnPlane(target - body.GetComponent<Renderer>().bounds.center, Vector3.up).normalized;
+            if (front.sqrMagnitude < 0.01f) front = Vector3.forward;
+            var hand = new GameObject("TEST_Rayo");
+            hand.transform.position = target + front * 1.2f;
+            hand.transform.rotation = Quaternion.LookRotation(target - hand.transform.position);
+            var ray = hand.AddComponent<XRRayInteractor>();
+            for (int i = 0; i < 5; i++) yield return null;
+            Assert.IsTrue(ray.interactablesHovered.Any(h => ((Component)h).gameObject == leaf.gameObject),
+                "El rayo no detecta la puerta de la nevera. Detecta: " + string.Join(", ", ray.interactablesHovered.Select(h => ((Component)h).name)));
+            Assert.AreEqual(1, (int)Get(leaf.GetComponent(Game("Level5HoverHighlight")), "State"), "La puerta apuntada debe iluminarse.");
+        }
+
         // La lámpara se apaga de verdad con su interruptor (no con acercarse).
         [UnityTest]
         public IEnumerator Lampara_ElInterruptorApagaLaLuzDeVerdad()

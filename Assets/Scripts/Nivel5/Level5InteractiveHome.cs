@@ -71,6 +71,15 @@ public sealed class Level5InteractiveHome : MonoBehaviour
         // Las tareas antiguas por proximidad o mirada quedan fuera (sus componentes se desactivan, no se borran).
         foreach (Level5WindowGaze gaze in FindObjectsByType<Level5WindowGaze>(FindObjectsInactive.Include, FindObjectsSortMode.None)) gaze.enabled = false;
 
+        // El XRSimpleInteractable antiguo de la raíz de cada tarea (puerta, nevera, lámpara) se quedaba con TODOS los
+        // colliders de sus hijos, incluidas las hojas: el interactable propio de cada hoja no podía registrarlos y el
+        // rayo del mando no la detectaba. Se quita antes de montar las piezas.
+        foreach (Level5TaskInteraction task in FindObjectsByType<Level5TaskInteraction>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            XRSimpleInteractable root = task.GetComponent<XRSimpleInteractable>();
+            if (root != null) DestroyImmediate(root);
+        }
+
         Transform[] all = apartment.GetComponentsInChildren<Transform>(true).ToArray();
         // Primero los marcos (para que, al elegir el sentido de apertura, la caja maciza ya no estorbe) y los cajones.
         foreach (Transform t in all.Where(t => t.name == "door_frame")) MakeFrameHollow(t);
@@ -83,6 +92,9 @@ public sealed class Level5InteractiveHome : MonoBehaviour
 
         SetUpWindow(apartment.transform);
         UseSnapTurn();
+        foreach (Level5HingeHandle hinge in hinges) Level5HoverHighlight.Attach(hinge.gameObject);
+        foreach (Level5SlideHandle slide in slides) Level5HoverHighlight.Attach(slide.gameObject);
+        if (WindowSlide != null) Level5HoverHighlight.Attach(WindowSlide.gameObject);
         Ready = true;
     }
 

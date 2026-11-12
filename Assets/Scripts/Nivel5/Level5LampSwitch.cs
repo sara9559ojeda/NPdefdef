@@ -59,6 +59,7 @@ public sealed class Level5LampSwitch : MonoBehaviour
         go.AddComponent<XRSimpleInteractable>();
         Level5LampSwitch lampSwitch = go.AddComponent<Level5LampSwitch>();
         lampSwitch.Collect(lamp, mainLight);
+        Level5HoverHighlight.Attach(go);
         return lampSwitch;
     }
 

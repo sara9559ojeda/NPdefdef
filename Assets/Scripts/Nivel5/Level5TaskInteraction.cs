@@ -60,7 +60,7 @@ public class Level5TaskInteraction : MonoBehaviour
         // mando o apuntarlo y apretar el gatillo) y su caja de colisión se retiran.
         XRSimpleInteractable rootInteractable = GetComponent<XRSimpleInteractable>();
         bool rootIsPiece = slide != null && slide.transform == transform;
-        if (rootInteractable != null && !rootIsPiece && controlledLight == null) rootInteractable.enabled = false;
+        if (rootInteractable != null && !rootIsPiece && controlledLight == null) Destroy(rootInteractable);
         if (movingPart != null)
         {
             foreach (Collider own in GetComponents<Collider>()) own.enabled = false;
@@ -72,7 +72,7 @@ public class Level5TaskInteraction : MonoBehaviour
 
         if (controlledLight != null && lampSwitch == null)
         {
-            if (rootInteractable != null) rootInteractable.enabled = false;
+            if (rootInteractable != null) Destroy(rootInteractable);
             foreach (Collider own in GetComponents<Collider>()) own.enabled = false;
             lampSwitch = Level5LampSwitch.Create(transform, controlledLight);
         }
