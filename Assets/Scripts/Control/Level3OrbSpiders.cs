@@ -1,30 +1,26 @@
 using System.Collections;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Coloca arañas de patrulla alrededor de cada orbe del Nivel 3 y otras repartidas por toda la sala,
-/// además de la araña original del spawn.
-/// Cada araña es un clon de la original con su propia ruta corta; ninguna se acerca al orbe ni persigue al jugador.
-/// Se crea solo en Nivel3; no modifica la escena.
+/// Reparte las arañas del Nivel 3. La cantidad total (incluida la araña original de la escena) sale de
+/// <see cref="Level3Settings.SpiderCountForGrade"/> según el grado de fobia de la sesión; una parte patrulla cerca de
+/// los orbes (sin taparlos) y el resto por la sala, siempre en suelo libre, lejos del inicio del jugador y entre sí.
+/// Cada araña es un clon de la original con su propia ruta circular. Se crea solo en Nivel3; no modifica la escena.
 /// </summary>
 public sealed class Level3OrbSpiders : MonoBehaviour
 {
     private const string SpiderName = "NP_WolfSpider_Nivel3_Patrol";
     private static readonly string[] OrbNames = { "NP_Orbe_1_Azul", "NP_Orbe_2_Naranja" };
-    private const int SpidersPerOrb = 3;
-    private static readonly float[] Radii = { 2.8f, 3.6f, 4.4f };
-    private const float ClearanceRadius = 0.6f;
-
-    // Arañas repartidas por la sala: lejos del jugador, de los orbes y entre sí.
     private const string FloorName = "PISO_CONCRETO_64x48";
-    private const int ScatteredSpiders = 10;
-    private const float WallMargin = 3f;
-    private const float MinDistanceFromPlayer = 6f;
-    private const float MinDistanceFromOrb = 3f;
-    private const float MinDistanceBetweenSpiders = 7f;
-    private const int ScatterAttempts = 400;
+    private const float WallMargin = 2.5f;
+    private const float BodyRadius = 0.35f;
+    private const int Attempts = 600;
+
+    public static int LastPlaced { get; private set; } = -1;
+    public static int LastRequested { get; private set; } = -1;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void Initialize()
@@ -37,12 +33,14 @@ public sealed class Level3OrbSpiders : MonoBehaviour
     private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
         if (scene.name != "Nivel3") return;
+        LastPlaced = -1;
         new GameObject("NP_Level3_OrbSpiders").AddComponent<Level3OrbSpiders>();
     }
 
     private IEnumerator Start()
     {
         yield return null;
+        Level3Settings settings = Level3Settings.Load();
 
         Transform[] all = FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
         Transform original = all.FirstOrDefault(t => t.name == SpiderName);
@@ -52,128 +50,100 @@ public sealed class Level3OrbSpiders : MonoBehaviour
             yield break;
         }
 
-        int count = 0;
-        foreach (string orbName in OrbNames)
-        {
-            Transform orb = all.FirstOrDefault(t => t.name == orbName);
-            if (orb == null) continue;
+        int grade = SessionManager.Instance != null ? SessionManager.Instance.PhobiaGrade : 0;
+        int total = settings.SpiderCountForGrade(grade);
+        int extra = Mathf.Max(0, total - 1);
+        LastRequested = total;
+        int nearOrbs = Mathf.RoundToInt(extra * settings.nearOrbsFraction);
 
-            for (int i = 0; i < SpidersPerOrb; i++)
+        Transform[] orbs = OrbNames.Select(n => all.FirstOrDefault(t => t.name == n)).Where(t => t != null).ToArray();
+        Transform player = all.FirstOrDefault(t => t.name.StartsWith("XR Origin")) ?? all.FirstOrDefault(t => t.name.StartsWith("NP_DesktopPlayer"));
+        var placed = new List<Vector3> { original.position };
+        int count = 0;
+
+        // Cerca de los orbes, repartidas por igual en anillo (2,5–4,5 m), sin tapar el orbe.
+        for (int i = 0; i < nearOrbs && orbs.Length > 0; i++)
+        {
+            Transform orb = orbs[i % orbs.Length];
+            if (TryFindSpot(settings, orb.position, settings.minDistanceFromOrb + 0.3f, settings.minDistanceFromOrb + 2.3f, player, orbs, placed, out Vector3 spot))
             {
-                if (TryFindSpot(orb.position, i, out Vector3 spot))
-                {
-                    Vector3 away = spot - orb.position;
-                    away.y = 0f;
-                    // La patrulla corre sobre transform.right: mirando en la dirección orbe->araña, la ruta
-                    // queda perpendicular a esa línea y la araña nunca se acerca al orbe.
-                    Spawn(original, spot, Quaternion.LookRotation(away.normalized, Vector3.up), ++count);
-                }
+                Spawn(original, spot, settings, ++count);
+                placed.Add(spot);
             }
         }
 
-        count = ScatterSpiders(original, all, count);
+        // El resto, por toda la sala.
+        Collider floor = all.Where(t => t.name == FloorName).Select(t => t.GetComponent<Collider>()).FirstOrDefault(c => c != null);
+        if (floor != null)
+        {
+            Bounds area = floor.bounds;
+            area.Expand(new Vector3(-WallMargin * 2f, 0f, -WallMargin * 2f));
+            int target = extra - count;
+            for (int attempt = 0; attempt < Attempts && target > 0; attempt++)
+            {
+                Vector3 candidate = new Vector3(Random.Range(area.min.x, area.max.x), area.max.y, Random.Range(area.min.z, area.max.z));
+                if (!IsFree(settings, candidate, player, orbs, placed, out Vector3 grounded)) continue;
+                Spawn(original, grounded, settings, ++count);
+                placed.Add(grounded);
+                target--;
+            }
+        }
 
-        Debug.Log("NeuroPhobia: Nivel3 arañas totales añadidas -> " + count);
+        LastPlaced = count + 1;
+        Debug.Log("NeuroPhobia: Nivel3 arañas (grado " + grade + ") -> " + LastPlaced + " de " + total);
         Destroy(gameObject);
     }
 
-    // Reparte arañas por el piso con muestreo aleatorio, respetando distancias mínimas.
-    private static int ScatterSpiders(Transform original, Transform[] all, int count)
+    private static bool TryFindSpot(Level3Settings settings, Vector3 center, float minRadius, float maxRadius, Transform player,
+        Transform[] orbs, List<Vector3> placed, out Vector3 spot)
     {
-        Transform floor = all.FirstOrDefault(t => t.name == FloorName);
-        Collider floorCollider = floor != null ? floor.GetComponent<Collider>() : null;
-        if (floorCollider == null)
+        for (int attempt = 0; attempt < 80; attempt++)
         {
-            Debug.LogWarning("NeuroPhobia: Level3OrbSpiders no encontró " + FloorName + "; sin arañas repartidas.");
-            return count;
+            float angle = Random.Range(0f, Mathf.PI * 2f);
+            float radius = Random.Range(minRadius, maxRadius);
+            Vector3 candidate = center + new Vector3(Mathf.Sin(angle), 0f, Mathf.Cos(angle)) * radius;
+            if (IsFree(settings, candidate, player, orbs, placed, out spot)) return true;
         }
-
-        Bounds area = floorCollider.bounds;
-        area.Expand(new Vector3(-WallMargin * 2f, 0f, -WallMargin * 2f));
-
-        var avoid = new System.Collections.Generic.List<(Vector3 position, float distance)>();
-        Transform player = all.FirstOrDefault(t => t.name.StartsWith("XR Origin"));
-        if (player != null) avoid.Add((player.position, MinDistanceFromPlayer));
-        avoid.Add((original.position, MinDistanceBetweenSpiders));
-        foreach (string orbName in OrbNames)
-        {
-            Transform orb = all.FirstOrDefault(t => t.name == orbName);
-            if (orb != null) avoid.Add((orb.position, MinDistanceFromOrb));
-        }
-        foreach (Transform t in FindObjectsByType<Transform>(FindObjectsSortMode.None))
-        {
-            if (t.name.StartsWith("NP_L3_OrbSpider_")) avoid.Add((t.position, MinDistanceBetweenSpiders * 0.6f));
-        }
-
-        int placed = 0;
-        for (int attempt = 0; attempt < ScatterAttempts && placed < ScatteredSpiders; attempt++)
-        {
-            Vector3 candidate = new Vector3(
-                Random.Range(area.min.x, area.max.x), 0.18f, Random.Range(area.min.z, area.max.z));
-
-            if (avoid.Any(a => FlatDistance(a.position, candidate) < a.distance)) continue;
-            if (Physics.CheckSphere(candidate + Vector3.up * 0.4f, ClearanceRadius, ~0, QueryTriggerInteraction.Ignore)) continue;
-            if (!Physics.Raycast(candidate + Vector3.up * 1.5f, Vector3.down, 3f, ~0, QueryTriggerInteraction.Ignore)) continue;
-
-            Spawn(original, candidate, Quaternion.Euler(0f, Random.Range(0f, 360f), 0f), ++count);
-            avoid.Add((candidate, MinDistanceBetweenSpiders));
-            placed++;
-        }
-
-        return count;
-    }
-
-    private static float FlatDistance(Vector3 a, Vector3 b)
-    {
-        a.y = 0f;
-        b.y = 0f;
-        return Vector3.Distance(a, b);
-    }
-
-    // Prueba ángulos alrededor del orbe hasta encontrar un punto libre de muebles y paredes.
-    private static bool TryFindSpot(Vector3 orbPosition, int index, out Vector3 spot)
-    {
-        float baseAngle = 40f + index * 120f;
-        foreach (float radius in Radii)
-        {
-            for (int step = 0; step < 12; step++)
-            {
-                float angle = (baseAngle + step * 30f) * Mathf.Deg2Rad;
-                Vector3 candidate = orbPosition + new Vector3(Mathf.Sin(angle), 0f, Mathf.Cos(angle)) * radius;
-                candidate.y = 0.18f;
-
-                bool blocked = Physics.CheckSphere(
-                    candidate + Vector3.up * 0.4f, ClearanceRadius, ~0, QueryTriggerInteraction.Ignore);
-                bool hasFloor = Physics.Raycast(
-                    candidate + Vector3.up * 1.5f, Vector3.down, 3f, ~0, QueryTriggerInteraction.Ignore);
-
-                if (!blocked && hasFloor)
-                {
-                    spot = candidate;
-                    return true;
-                }
-            }
-        }
-
         spot = default;
         return false;
     }
 
-    private static void Spawn(Transform original, Vector3 position, Quaternion rotation, int number)
+    /// <summary>
+    /// Punto de suelo libre: hay suelo debajo, el cuerpo de la araña (una esfera por encima del suelo) no toca muebles
+    /// ni paredes, y respeta las distancias al jugador, a los orbes y a las demás arañas.
+    /// </summary>
+    public static bool IsFree(Level3Settings settings, Vector3 candidate, Transform player, Transform[] orbs, List<Vector3> placed, out Vector3 grounded)
     {
-        GameObject clone = Instantiate(original.gameObject, position, rotation);
-        clone.name = "NP_L3_OrbSpider_" + number;
+        grounded = candidate;
+        if (!Physics.Raycast(new Vector3(candidate.x, candidate.y + 2.5f, candidate.z), Vector3.down, out RaycastHit hit, 6f, ~0, QueryTriggerInteraction.Ignore)) return false;
+        if (hit.normal.y < 0.9f || hit.point.y > 0.5f) return false;   // encima de un mueble o en una pared
+        grounded = hit.point + Vector3.up * 0.02f;
 
-        // Start() aún no corrió: se sueltan los puntos del original para que el clon cree los suyos.
+        // La esfera empieza por encima del suelo: antes tocaba el suelo y descartaba todos los puntos.
+        if (Physics.CheckSphere(grounded + Vector3.up * (BodyRadius + 0.08f), BodyRadius, ~0, QueryTriggerInteraction.Ignore)) return false;
+        if (player != null && Flat(player.position - grounded) < settings.minDistanceFromPlayer) return false;
+        Vector3 spot = grounded;
+        if (orbs.Any(o => Flat(o.position - spot) < settings.minDistanceFromOrb)) return false;
+        if (placed.Any(p => Flat(p - spot) < settings.minDistanceBetweenSpiders)) return false;
+        return true;
+    }
+
+    private static float Flat(Vector3 v) { v.y = 0f; return v.magnitude; }
+
+    private static void Spawn(Transform original, Vector3 position, Level3Settings settings, int number)
+    {
+        GameObject clone = Instantiate(original.gameObject, position, Quaternion.Euler(0f, Random.Range(0f, 360f), 0f));
+        clone.name = "NP_L3_OrbSpider_" + number;
         Level3SpiderPatrolV2 patrol = clone.GetComponent<Level3SpiderPatrolV2>();
         if (patrol != null)
         {
+            // Start() aún no corrió: se sueltan los puntos del original para que el clon cree su propia ruta.
             patrol.pointA = null;
             patrol.pointB = null;
-            patrol.patrolHalfDistance = Random.Range(0.9f, 1.6f);
-            patrol.moveSpeed = Random.Range(0.10f, 0.16f);
+            patrol.patrolHalfDistance = settings.routeRadius * Random.Range(0.8f, 1.2f);
+            patrol.moveSpeed = settings.moveSpeed * Random.Range(0.85f, 1.15f);
+            patrol.turnRate = settings.turnRate;
         }
-
         clone.SetActive(true);
     }
 }

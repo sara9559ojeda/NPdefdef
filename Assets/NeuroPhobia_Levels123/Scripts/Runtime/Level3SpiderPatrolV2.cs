@@ -3,10 +3,11 @@ using System.Linq;
 using UnityEngine;
 
 /// <summary>
-/// Patrulla segura de la araña del Nivel 3.
-/// Ignora los colliders de la propia araña al buscar el suelo,
-/// conserva la ruta alrededor de la posición colocada en la escena
-/// y evita que el modelo se desplace fuera del sótano.
+/// Patrulla segura y natural de la araña del Nivel 3.
+/// Recorre en bucle una ruta circular de puntos alrededor de su sitio (antes iba y volvía entre dos puntos con giros
+/// de 180° en el sitio). Gira de forma continua con un giro máximo por segundo, mira siempre hacia donde avanza,
+/// frena en las curvas y acelera con suavidad; de vez en cuando se detiene un momento.
+/// Ignora sus propios colliders al buscar el suelo y no sale de su zona.
 /// </summary>
 public class Level3SpiderPatrolV2 : MonoBehaviour
 {
@@ -15,6 +16,14 @@ public class Level3SpiderPatrolV2 : MonoBehaviour
     public float moveSpeed = 0.13f;
     public float reducedSpeedMultiplier = 0.5f;
     public float turnSpeed = 4.5f;
+    [Tooltip("Giro máximo en grados por segundo (sin giros bruscos).")]
+    public float turnRate = 70f;
+    [Tooltip("Aceleración (m/s²) al arrancar y frenar.")]
+    public float acceleration = 0.12f;
+    [Tooltip("Puntos de la ruta circular.")]
+    public int routePoints = 6;
+    [Tooltip("Probabilidad de detenerse un momento al llegar a un punto.")]
+    [Range(0f, 1f)] public float pauseChance = 0.3f;
     public Animator animator;
     public float animatorSpeed = 0.28f;
     public Transform visualRoot;
@@ -40,6 +49,12 @@ public class Level3SpiderPatrolV2 : MonoBehaviour
     private Vector3 initialSpawn;
     private Quaternion initialRotation;
     private float stableGroundY;
+    private readonly System.Collections.Generic.List<Vector3> route = new System.Collections.Generic.List<Vector3>();
+    private int routeIndex;
+    private float currentSpeed;
+
+    public float CurrentSpeed => currentSpeed;
+    public int RouteCount => route.Count;
 
     private void OnEnable()
     {
@@ -65,6 +80,44 @@ public class Level3SpiderPatrolV2 : MonoBehaviour
         lastPosition = transform.position;
 
         SnapToGroundSafe();
+        BuildRoute();
+    }
+
+    // Ruta circular alrededor del sitio de la araña; se descartan los puntos dentro de muebles o paredes.
+    private void BuildRoute()
+    {
+        route.Clear();
+        float radius = Mathf.Max(0.4f, patrolHalfDistance);
+        float start = Random.Range(0f, 360f);
+        float direction = Random.value < 0.5f ? 1f : -1f;
+        int count = Mathf.Max(4, routePoints);
+        for (int i = 0; i < count; i++)
+        {
+            float angle = (start + direction * i * 360f / count) * Mathf.Deg2Rad;
+            float r = radius * Random.Range(0.8f, 1.15f);
+            Vector3 point = initialSpawn + new Vector3(Mathf.Sin(angle), 0f, Mathf.Cos(angle)) * r;
+            if (Physics.CheckSphere(point + Vector3.up * 0.35f, 0.25f, groundMask, QueryTriggerInteraction.Ignore) &&
+                !OnlySelfAt(point + Vector3.up * 0.35f, 0.25f)) continue;
+            route.Add(point);
+        }
+        if (route.Count < 2 && pointA != null && pointB != null)
+        {
+            route.Clear();
+            route.Add(pointA.position);
+            route.Add(pointB.position);
+        }
+        routeIndex = 0;
+    }
+
+    private bool OnlySelfAt(Vector3 center, float radius)
+    {
+        foreach (Collider c in Physics.OverlapSphere(center, radius, groundMask, QueryTriggerInteraction.Ignore))
+        {
+            if (c.transform == transform || c.transform.IsChildOf(transform)) continue;
+            if (c.GetComponentInParent<Level3SpiderPatrolV2>() != null) continue;
+            return false;
+        }
+        return true;
     }
 
     private void Update()
@@ -76,50 +129,44 @@ public class Level3SpiderPatrolV2 : MonoBehaviour
             ResetToSafeRoutePosition();
         }
 
-        if (paused || waiting || pointA == null || pointB == null || target == null)
+        if (paused || waiting || route.Count < 2)
         {
+            currentSpeed = 0f;
             SetAnimatorMoving(false, 0f);
             ApplyFallbackLegMotion(false, 0f);
             return;
         }
 
-        float speed = moveSpeed * (reduced ? reducedSpeedMultiplier : 1f);
-        Vector3 destination = target.position;
+        float cruise = moveSpeed * (reduced ? reducedSpeedMultiplier : 1f);
+        Vector3 destination = route[routeIndex];
         Vector3 flatDirection = destination - transform.position;
         flatDirection.y = 0f;
         float distance = flatDirection.magnitude;
 
-        if (distance <= 0.055f)
+        if (distance <= 0.2f)
         {
-            target = target == pointA ? pointB : pointA;
-            StartCoroutine(WaitAtEndpoint(Random.Range(endpointPauseMin, endpointPauseMax)));
+            routeIndex = (routeIndex + 1) % route.Count;
+            if (Random.value < pauseChance)
+            {
+                StartCoroutine(WaitAtEndpoint(Random.Range(endpointPauseMin, endpointPauseMax)));
+            }
             return;
         }
 
-        if (flatDirection.sqrMagnitude > 0.0001f)
-        {
-            Quaternion desiredRotation =
-                Quaternion.LookRotation(flatDirection.normalized, Vector3.up);
+        // Giro continuo y limitado; la velocidad baja en las curvas y nunca se desliza de lado: avanza
+        // siempre en la dirección a la que mira.
+        Quaternion desiredRotation = Quaternion.LookRotation(flatDirection.normalized, Vector3.up);
+        transform.rotation = Quaternion.RotateTowards(transform.rotation, desiredRotation, turnRate * Time.deltaTime);
+        float misalignment = Quaternion.Angle(transform.rotation, desiredRotation);
+        float targetSpeed = cruise * Mathf.Clamp01(1f - misalignment / 75f);
+        currentSpeed = Mathf.MoveTowards(currentSpeed, targetSpeed, acceleration * Time.deltaTime);
 
-            transform.rotation = Quaternion.RotateTowards(
-                transform.rotation,
-                desiredRotation,
-                turnSpeed * 90f * Time.deltaTime);
-
-            float angle = Quaternion.Angle(transform.rotation, desiredRotation);
-
-            if (angle < 32f)
-            {
-                Vector3 next = Vector3.MoveTowards(
-                    transform.position,
-                    destination,
-                    speed * Time.deltaTime);
-
-                next.y = transform.position.y;
-                transform.position = next;
-                SnapToGroundSafe();
-            }
-        }
+        Vector3 forward = transform.forward;
+        forward.y = 0f;
+        Vector3 next = transform.position + forward.normalized * Mathf.Min(currentSpeed * Time.deltaTime, distance);
+        next.y = transform.position.y;
+        transform.position = next;
+        SnapToGroundSafe();
 
         float actualSpeed =
             Vector3.Distance(lastPosition, transform.position) /
@@ -280,7 +327,7 @@ public class Level3SpiderPatrolV2 : MonoBehaviour
             return true;
         }
 
-        Vector3 routeCenter = GetRouteCenter();
+        Vector3 routeCenter = initialSpawn;
         Vector3 flatOffset = transform.position - routeCenter;
         flatOffset.y = 0f;
 
@@ -305,7 +352,7 @@ public class Level3SpiderPatrolV2 : MonoBehaviour
 
     private void ResetToSafeRoutePosition()
     {
-        Vector3 resetPosition = GetRouteCenter();
+        Vector3 resetPosition = initialSpawn;
         resetPosition.y = stableGroundY;
 
         transform.SetPositionAndRotation(
@@ -363,7 +410,7 @@ public class Level3SpiderPatrolV2 : MonoBehaviour
 
         float phase = Time.time * (5.5f + actualSpeed * 12f);
         float bob = Mathf.Sin(phase) * 0.006f;
-        float roll = Mathf.Sin(phase * 0.5f) * 1.1f;
+        float roll = Mathf.Sin(phase * 0.5f) * 0.4f;
 
         visualRoot.localPosition =
             visualBasePosition + Vector3.up * bob;
@@ -375,6 +422,7 @@ public class Level3SpiderPatrolV2 : MonoBehaviour
     private IEnumerator WaitAtEndpoint(float seconds)
     {
         waiting = true;
+        currentSpeed = 0f;
         SetAnimatorMoving(false, 0f);
         yield return new WaitForSeconds(seconds);
         waiting = false;
