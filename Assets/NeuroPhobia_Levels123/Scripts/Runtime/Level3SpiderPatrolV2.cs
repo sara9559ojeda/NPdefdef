@@ -35,6 +35,8 @@ public class Level3SpiderPatrolV2 : MonoBehaviour
     public float playerClearance = 1.5f;
     public Animator animator;
     public float animatorSpeed = 0.28f;
+    [Tooltip("Animator speed while the spider stands still: the legs keep shifting very slowly instead of freezing.")]
+    public float idleAnimatorSpeed = 0.05f;
     public Transform visualRoot;
     public float endpointPauseMin = 0.8f;
     public float endpointPauseMax = 1.8f;
@@ -536,7 +538,8 @@ public class Level3SpiderPatrolV2 : MonoBehaviour
             ? animatorSpeed *
               Mathf.Clamp(speedRatio, 0.55f, 1.25f) *
               (reduced ? reducedSpeedMultiplier : 1f)
-            : 0f;
+            // Waiting or blocked is not freezing; only the calm pause (breathing, pause menu) stops it completely.
+            : (paused ? 0f : idleAnimatorSpeed);
     }
 
     private void ApplyFallbackLegMotion(bool moving, float actualSpeed)

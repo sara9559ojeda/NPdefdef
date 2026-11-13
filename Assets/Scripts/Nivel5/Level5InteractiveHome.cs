@@ -153,12 +153,39 @@ public sealed class Level5InteractiveHome : MonoBehaviour
         // Puertas de las habitaciones («puerta sala a cuarto», «puerta cuarto a baño»): abren hacia dentro del cuarto al
         // que llevan y se abren o cierran con un toque. (Antes el sentido salía de un desempate casi al azar y había que
         // arrastrar la mano en arco.)
-        bool roomDoor = TryRoomDoorSign(leaf, pivot, maxAngle, out float roomSign);
+        // Passage doors hinge on the edge opposite the handle (see TryPassageDoorHinge), whatever pivot the scene has.
+        bool passageDoor = TryPassageDoorHinge(leaf, out Vector3 doorHinge);
+        Vector3 hingePoint = passageDoor ? doorHinge : pivot != null ? pivot.position : leaf.position;
+        if (passageDoor) hinge.SetHingePoint(doorHinge);
+        bool roomDoor = TryRoomDoorSign(leaf, hingePoint, maxAngle, out float roomSign);
         hinge.openAngle = Mathf.Abs(maxAngle) * (roomDoor ? roomSign : OpeningSign(leaf, pivot, maxAngle));
         hinge.toggleOnPress = roomDoor;
         hinge.Initialize();
         hinges.Add(hinge);
         return hinge;
+    }
+
+    /// <summary>
+    /// Hinge point of a passage door leaf ("door_body" of the nappin door model). The origin of that model sits on
+    /// the edge that carries the handle, so turning around it made the door open from the wrong side. The hinge is
+    /// the opposite vertical edge of the leaf: the one farther from the model origin along the leaf's width.
+    /// Returns false for anything that is not a passage door leaf.
+    /// </summary>
+    public static bool TryPassageDoorHinge(Transform leaf, out Vector3 hinge)
+    {
+        hinge = leaf.position;
+        if (leaf.name != "door_body") return false;
+        BoxCollider box = leaf.GetComponent<BoxCollider>();
+        if (box == null) return false;
+
+        bool widthOnZ = box.size.z >= box.size.x;
+        float centre = widthOnZ ? box.center.z : box.center.x;
+        float half = (widthOnZ ? box.size.z : box.size.x) * 0.5f;
+        float farEdge = Mathf.Abs(centre + half) >= Mathf.Abs(centre - half) ? centre + half : centre - half;
+
+        Vector3 local = widthOnZ ? new Vector3(box.center.x, 0f, farEdge) : new Vector3(farEdge, 0f, box.center.z);
+        hinge = leaf.TransformPoint(local);
+        return true;
     }
 
     // Pisos de cada cuarto (nombres de la escena) según la palabra del destino en «puerta X a Y».
@@ -172,7 +199,7 @@ public sealed class Level5InteractiveHome : MonoBehaviour
     /// (el «Y» de «puerta X a Y»), es decir, se empuja al entrar. Devuelve false si la hoja no es de una puerta de paso
     /// con ese nombre o no se encuentra el piso del cuarto.
     /// </summary>
-    public static bool TryRoomDoorSign(Transform leaf, Transform pivot, float angle, out float sign)
+    public static bool TryRoomDoorSign(Transform leaf, Vector3 hinge, float angle, out float sign)
     {
         sign = 1f;
         if (leaf.name != "door_body") return false;
@@ -196,7 +223,6 @@ public sealed class Level5InteractiveHome : MonoBehaviour
         BoxCollider box = leaf.GetComponent<BoxCollider>();
         Vector3 thin = box != null && box.size.z < box.size.x ? leaf.forward : leaf.right;
         Vector3 normal = Flat(thin).normalized;
-        Vector3 hinge = pivot != null ? pivot.position : leaf.position;
         float roomSide = Mathf.Sign(Vector3.Dot(Flat(floorRenderer.bounds.center - hinge), normal));
 
         Vector3 closed = LeafCenter(leaf);

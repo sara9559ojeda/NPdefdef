@@ -34,8 +34,16 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
     private GameObject resultsPanel;
     private TMP_Text resultsText;
     private string feedbackSessionId;
-    private DeviceContextDto renderedFeedbackContext;
-    private string renderedFeedbackSessionId;
+    // Results screen: one "preparing" state while the result is on its way, then a short summary; the full text
+    // is shown only on request.
+    private const string PreparingResultText = "Preparando tu resultado";
+    private const float ResultPendingTimeoutSeconds = 45f;
+    private const float ResultPollSeconds = 4f;
+    private GameObject resultsDetailButton;
+    private TMP_Text resultsDetailLabel;
+    private bool resultsShowDetail;
+    private float resultsOpenedAt;
+    private float resultsNextPoll;
     private GameObject accessibilityPanel;
     private TMP_Text[] accessibilityValues;
     // Vinculación del visor (contrato API v1, 6.1): es el «Inicio de sesión» del paciente en el BPMN.
@@ -802,6 +810,9 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         resultsText.textWrappingMode = TextWrappingModes.Normal;
         UI.Place(resultsText.gameObject, 60f, 180f, 940f, 380f);
         PaperButton(resultsSheet, "Volver", "Volver", UI.ButtonKind.Secondary, 60f, 592f, 156f, 68f, ShowMain);
+        resultsDetailLabel = PaperButton(resultsSheet, "Detalle", "Ver detalle", UI.ButtonKind.Secondary, 740f, 592f, 260f, 68f, ToggleResultsDetail);
+        resultsDetailButton = resultsDetailLabel.GetComponentInParent<Button>().gameObject;
+        resultsDetailButton.SetActive(false);
         resultsPanel.SetActive(false);
     }
 
@@ -815,10 +826,17 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         ShowMain();
         mainPanel.SetActive(false);
         feedbackSessionId = sessionId;
+        resultsShowDetail = false;
+        resultsOpenedAt = Time.unscaledTime;
+        resultsNextPoll = 0f;
         resultsPanel.SetActive(true);
         RefreshResults();
-        FastAPIClient api = Api();
-        if (api != null && api.IsPaired) api.StartCoroutine(api.RefreshContext(_ => RefreshResults()));
+    }
+
+    private void ToggleResultsDetail()
+    {
+        resultsShowDetail = !resultsShowDetail;
+        RefreshResults();
     }
 
     private void Update()
@@ -830,16 +848,37 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
     {
         FastAPIClient api = Api();
         DeviceContextDto context = api != null ? api.Context : null;
-        if (renderedFeedbackContext == context && renderedFeedbackSessionId == feedbackSessionId && !string.IsNullOrEmpty(resultsText.text)) return;
-        renderedFeedbackContext = context;
-        renderedFeedbackSessionId = feedbackSessionId;
         SessionReport report = SessionManager.Instance != null ? SessionManager.Instance.GetReport() : null;
-        if (!string.IsNullOrEmpty(feedbackSessionId) && report != null && report.testSession)
-            resultsText.text = "Esta es una sesión de prueba. Sus registros no generan recomendaciones ni cuentan como progreso.";
-        else if (api == null || api.Context == null)
-            resultsText.text = "Aún no hay un análisis disponible. Vincula el visor y comprueba el estado del envío.";
+        bool testSession = !string.IsNullOrEmpty(feedbackSessionId) && report != null && report.testSession;
+        bool waiting = !testSession && api != null && api.IsPaired
+            && (context == null || context.FeedbackPending(feedbackSessionId))
+            && Time.unscaledTime - resultsOpenedAt < ResultPendingTimeoutSeconds;
+
+        // The result is asked for when the screen opens and again every few seconds while it is being prepared.
+        if (api != null && api.IsPaired && Time.unscaledTime >= resultsNextPoll && (waiting || resultsNextPoll <= 0f))
+        {
+            resultsNextPoll = Time.unscaledTime + ResultPollSeconds;
+            api.StartCoroutine(api.RefreshContext(null));
+        }
+
+        string text;
+        bool hasDetail = false;
+        if (testSession)
+            text = "Esta es una sesión de prueba. Sus registros no generan recomendaciones ni cuentan como progreso.";
+        else if (waiting)
+            text = PreparingResultText + new string('.', 1 + (int)(Time.unscaledTime * 2f) % 3);
+        else if (context == null)
+            text = "Aún no hay un análisis disponible. Vincula el visor y comprueba el estado del envío.";
         else
-            resultsText.text = api.Context.FeedbackText(feedbackSessionId);
+        {
+            hasDetail = context.HasFeedbackFor(feedbackSessionId);
+            text = resultsShowDetail && hasDetail ? context.FeedbackText(feedbackSessionId) : context.FeedbackSummary(feedbackSessionId);
+        }
+
+        if (resultsText.text != text) resultsText.text = text;
+        if (resultsDetailButton.activeSelf != hasDetail) resultsDetailButton.SetActive(hasDetail);
+        string detailLabel = resultsShowDetail ? "Ver resumen" : "Ver detalle";
+        if (resultsDetailLabel.text != detailLabel) resultsDetailLabel.text = detailLabel;
     }
 
     private void HideSessionPanels()

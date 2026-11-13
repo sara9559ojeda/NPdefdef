@@ -546,15 +546,75 @@ public class DeviceContextDto
     public RecommendationDto recommendation = new RecommendationDto();
     public DeviceSessionFeedbackDto lastFeedback;
 
+    private const string NotAvailableText = "El resultado de esta sesión todavía no está disponible. Comprueba el estado del envío.";
+    private const int SummarySentences = 3;
+    private const int SummaryMaxCharacters = 320;
+
+    /// <summary>True when the saved feedback belongs to the requested session (or to any session if none is requested).</summary>
+    public bool HasFeedbackFor(string sessionId = null)
+    {
+        return lastFeedback != null && lastFeedback.analysis != null && !string.IsNullOrEmpty(lastFeedback.sessionId)
+            && (string.IsNullOrEmpty(sessionId) || lastFeedback.sessionId == sessionId);
+    }
+
+    /// <summary>
+    /// True while the result of the requested session is still on its way: either it has not arrived yet or its
+    /// assisted summary is being written. The screen shows a single "preparing" state meanwhile.
+    /// </summary>
+    public bool FeedbackPending(string sessionId)
+    {
+        if (!HasFeedbackFor(sessionId)) return !string.IsNullOrEmpty(sessionId);
+        string status = lastFeedback.analysis.narrativeStatus;
+        return status == "pending" || status == "generating";
+    }
+
+    /// <summary>Short result for the patient: level, duration, suggestion and a few sentences of the analysis.</summary>
+    public string FeedbackSummary(string sessionId = null)
+    {
+        if (!HasFeedbackFor(sessionId)) return FallbackText(sessionId);
+
+        var text = new StringBuilder();
+        int seconds = Mathf.RoundToInt(lastFeedback.totalDurationSeconds);
+        text.AppendLine("Nivel alcanzado: " + lastFeedback.levelReached + "  ·  Duración: " + (seconds / 60) + ":" + (seconds % 60).ToString("00"));
+        string recommendationText = RecommendationText();
+        if (!string.IsNullOrEmpty(recommendationText)) text.AppendLine(recommendationText);
+
+        DeviceAnalysisDto analysis = lastFeedback.analysis;
+        string body = analysis.narrativeStatus == "generated" && !string.IsNullOrEmpty(analysis.narrative)
+            ? analysis.narrative : analysis.explanation;
+        if (!string.IsNullOrEmpty(body)) text.AppendLine().Append(Shorten(body));
+        return text.ToString().TrimEnd();
+    }
+
+    private string FallbackText(string sessionId)
+    {
+        string previous = RecommendationText();
+        return string.IsNullOrEmpty(sessionId) && !string.IsNullOrEmpty(previous) ? previous : NotAvailableText;
+    }
+
+    // First sentences of a text, cut at a sentence end and never longer than SummaryMaxCharacters.
+    private static string Shorten(string value)
+    {
+        string trimmed = value.Trim();
+        int end = 0;
+        int sentences = 0;
+        for (int i = 0; i < trimmed.Length && sentences < SummarySentences; i++)
+        {
+            bool sentenceEnd = (trimmed[i] == '.' || trimmed[i] == '!' || trimmed[i] == '?')
+                && (i == trimmed.Length - 1 || char.IsWhiteSpace(trimmed[i + 1]));
+            if (!sentenceEnd) continue;
+            if (i + 1 > SummaryMaxCharacters) break;
+            end = i + 1;
+            sentences++;
+        }
+        if (end > 0) return trimmed.Substring(0, end);
+        return trimmed.Length <= SummaryMaxCharacters ? trimmed : trimmed.Substring(0, SummaryMaxCharacters).TrimEnd() + "…";
+    }
+
+    /// <summary>Full result: everything in the summary plus the comparison with the previous session and the review note.</summary>
     public string FeedbackText(string sessionId = null)
     {
-        if (lastFeedback == null || lastFeedback.analysis == null || string.IsNullOrEmpty(lastFeedback.sessionId)
-            || (!string.IsNullOrEmpty(sessionId) && lastFeedback.sessionId != sessionId))
-        {
-            string previous = RecommendationText();
-            return string.IsNullOrEmpty(sessionId) && !string.IsNullOrEmpty(previous)
-                ? previous : "El resultado de esta sesión todavía no está disponible. Comprueba el estado del envío.";
-        }
+        if (!HasFeedbackFor(sessionId)) return FallbackText(sessionId);
         var text = new StringBuilder();
         text.AppendLine("Nivel registrado: " + lastFeedback.levelReached);
         text.AppendLine("Duración: " + Mathf.RoundToInt(lastFeedback.totalDurationSeconds) + " segundos");

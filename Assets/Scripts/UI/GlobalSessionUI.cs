@@ -691,11 +691,15 @@ Tu misión está en tu mano izquierda: levántala y mírala.");
     private static string ReportText(SessionReport report)
     {
         if (report == null) return "No hay una sesión registrada.";
+        // One short line per level; the full metrics travel to the server and are not shown here.
         StringBuilder text = new StringBuilder();
-        text.AppendLine("Sesión: " + report.sessionId);
-        text.AppendLine("Grado inicial: " + report.phobiaGrade + " / 5");
-        text.AppendLine("Duración total: " + FormatTime(report.totalDuration));
-        foreach (LevelMetrics metrics in report.levelMetrics) text.AppendLine(MetricsText(metrics));
+        text.AppendLine("Grado inicial: " + report.phobiaGrade + " / 5  ·  Duración total: " + FormatTime(report.totalDuration));
+        foreach (LevelMetrics metrics in report.levelMetrics)
+        {
+            if (metrics == null) continue;
+            text.AppendLine("Nivel " + metrics.level + "  ·  " + (metrics.levelPassed ? "completado" : "interrumpido")
+                + "  ·  " + FormatTime(metrics.sessionDuration));
+        }
         return text.ToString();
     }
 

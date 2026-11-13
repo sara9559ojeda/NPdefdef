@@ -163,9 +163,9 @@ namespace NeuroPhobia.Tests
             yield return null;
             TMPro.TMP_Text[] texts = UnityEngine.Object.FindObjectsByType<TMPro.TMP_Text>(FindObjectsSortMode.None);
             string mission = (string)Game("NPLevel3RealOrbs").GetField("MissionText").GetValue(null);
-            Assert.IsTrue(texts.Any(t => t.text == mission && t.isActiveAndEnabled), "La misión no aparece en el HUD.");
-            Canvas hud = texts.First(t => t.text == mission).canvas.rootCanvas;
-            Assert.AreEqual(RenderMode.WorldSpace, hud.renderMode, "El HUD del nivel 3 debe estar en el mundo.");
+            Assert.IsTrue(texts.Any(t => t.text.Contains(mission) && t.isActiveAndEnabled), "La misión no aparece en el HUD.");
+            string shown = (string)Game("LevelHud").GetProperty("MissionBody").GetValue(null);
+            StringAssert.Contains(mission, shown, "La misión debe estar en el HUD de muñeca compartido.");
         }
 
         [UnityTest]

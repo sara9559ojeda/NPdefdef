@@ -1,36 +1,57 @@
+using System.Collections;
 using System.Collections.Generic;
 using Unity.XR.CoreUtils;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
-using UnityEngine.XR.Interaction.Toolkit.Locomotion.Jump;
+using UnityEngine.XR;
 
 /// <summary>
-/// Permite sentarse y pararse en Nivel2 con el botón A del mando derecho (C en teclado), pero solo
-/// dentro del trigger de un sillón de la sala (una caja invisible alrededor de cada objeto cuyo nombre
-/// contiene «sofa»); fuera de ellos no hace nada. En Nivel2 el botón A ya no salta: el salto del rig se apaga.
-/// Sentado baja la vista, con una transición suave, hasta una altura de ojos de silla y bloquea el
-/// movimiento con el joystick; al pararse restaura ambas cosas. Se crea solo en Nivel2.
+/// Sitting is the one action that exists only in Nivel2. With the A button of the right controller (C on a
+/// keyboard) the player sits on an armchair and stands up again, but only inside the invisible zone around an
+/// armchair (every scene object whose root name contains "sofa").
+/// - Entering a zone shows the "A" badge on the armchair and gives a short vibration, so the player knows it
+///   can be used.
+/// - Sitting is a short trip hidden by a fade: the player is carried onto the seat, facing the spider, with the
+///   eyes at chair height. Movement with the stick is locked while seated; turning still works.
+/// - Standing up fades again and returns the player to where they were standing.
+/// Created automatically in Nivel2; the scene is not modified.
 /// </summary>
 public sealed class Level2SitToggle : MonoBehaviour
 {
+    private const string SpiderName = "NP_WolfSpider_Nivel2_Static";
+    private const string SitPrompt = "A · Sentarte";
+    private const string StandHint = "Pulsa A para levantarte.";
+    private const float StandHintSeconds = 5f;
     private const float SeatedEyeHeight = 1.1f;
     private const float MaxDrop = 0.9f;
-    // Margen (m) del trigger alrededor del sillón, en planta.
-    private const float TriggerMargin = 0.6f;
-    // Alto (m) del trigger con el rig a escala 1 (se multiplica por la escala del rig): cubre la cabeza de pie.
-    private const float TriggerHeight = 2.6f;
-    private const float TransitionSeconds = 0.4f;
+    // Horizontal margin (m) of the zone around the armchair.
+    private const float ZoneMargin = 0.6f;
+    // Zone height (m) at rig scale 1; multiplied by the rig scale so it always covers the standing head.
+    private const float ZoneHeight = 2.6f;
+    private const float FadeSeconds = 0.25f;
     private const int IgnoreRaycastLayer = 2;
 
+    private sealed class Seat
+    {
+        public BoxCollider zone;
+        public Vector3 seatPoint;
+        public Vector3 promptPoint;
+    }
+
+    private readonly List<Seat> seats = new List<Seat>();
     private XROrigin origin;
     private Transform cameraOffset;
-    private Vector3 standingOffset;
     private InputAction toggleAction;
+    private Seat nearbySeat;
     private bool seated;
-    private Vector3 targetOffset;
-    private bool transitioning;
-    private readonly List<BoxCollider> seatTriggers = new List<BoxCollider>();
+    private bool busy;
+    private Vector3 standingOffset;
+    private Vector3 standingPosition;
+    private Quaternion standingRotation;
+
+    /// <summary>True while the player is seated (for tests).</summary>
+    public bool IsSeated => seated;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void Initialize()
@@ -63,50 +84,43 @@ public sealed class Level2SitToggle : MonoBehaviour
             toggleAction = null;
         }
 
-        StandUp();
+        // Leaving the level while seated: restore the rig without a transition.
+        if (seated) RestoreStanding();
+        InteractionPrompt.Hide(this);
     }
 
     private void Update()
     {
-        if (origin == null)
-        {
-            origin = FindFirstObjectByType<XROrigin>();
-            if (origin == null || origin.CameraFloorOffsetObject == null) { origin = null; return; }
-            cameraOffset = origin.CameraFloorOffsetObject.transform;
-            standingOffset = cameraOffset.localPosition;
-            DisableJump(origin);
-            BuildSeatTriggers();
-        }
+        if (origin == null && !TryBindRig()) return;
+        if (origin.Camera == null) return;
 
-        // Transición suave de la altura de ojos (antes era un salto de golpe). Fuera de una transición no se
-        // toca el offset, para no pelear con el modo de seguimiento de piso del rig.
-        if (transitioning)
-        {
-            cameraOffset.localPosition = Vector3.MoveTowards(
-                cameraOffset.localPosition, targetOffset, MaxDrop / TransitionSeconds * Time.unscaledDeltaTime);
-            transitioning = cameraOffset.localPosition != targetOffset;
-        }
+        UpdateNearbySeat();
 
-        if (toggleAction.WasPressedThisFrame())
-        {
-            if (seated) StandUp();
-            else SitDown();
-        }
+        bool playing = GameStateManager.CurrentState == GameState.PLAYING;
+        if (busy || !playing || !toggleAction.WasPressedThisFrame()) return;
+
+        if (seated) StartCoroutine(StandUp());
+        else if (nearbySeat != null) StartCoroutine(SitDown(nearbySeat));
     }
 
-    // En Nivel2 el botón A es para sentarse: el salto del rig (también en A) se apaga.
-    private static void DisableJump(XROrigin rig)
+    private bool TryBindRig()
     {
-        foreach (JumpProvider jump in rig.GetComponentsInChildren<JumpProvider>(true))
+        origin = FindFirstObjectByType<XROrigin>();
+        if (origin == null || origin.CameraFloorOffsetObject == null)
         {
-            jump.enabled = false;
+            origin = null;
+            return false;
         }
+        cameraOffset = origin.CameraFloorOffsetObject.transform;
+        BuildSeats();
+        return true;
     }
 
-    // Un trigger (caja invisible) por sillón. Las mallas del sillón se llaman «Plane.010», «cloth.015»…; el nombre
-    // con «sofa» lo lleva el objeto raíz del mueble, así que se busca ahí y se abarcan todas sus mallas.
-    private void BuildSeatTriggers()
+    // One zone per armchair. The meshes are called "Plane.010", "cloth.015"...; the name with "sofa" belongs to
+    // the root object of the furniture, so the zone is built from all the renderers under that root.
+    private void BuildSeats()
     {
+        float rigScale = Mathf.Max(1f, origin.transform.lossyScale.y);
         foreach (Transform t in FindObjectsByType<Transform>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
         {
             if (!IsSofaRoot(t)) continue;
@@ -116,15 +130,20 @@ public sealed class Level2SitToggle : MonoBehaviour
             Bounds bounds = renderers[0].bounds;
             for (int i = 1; i < renderers.Length; i++) bounds.Encapsulate(renderers[i].bounds);
 
-            // El rig de Nivel2 está escalado (×2,6): la cabeza de pie queda a más de 3 m, así que el alto acompaña la escala.
-            float height = TriggerHeight * Mathf.Max(1f, origin.transform.lossyScale.y);
-            GameObject zone = new GameObject("NP_Sillon_Trigger_" + t.name);
-            zone.layer = IgnoreRaycastLayer;   // no tapa el rayo de los mandos ni la mirada
-            zone.transform.position = new Vector3(bounds.center.x, bounds.min.y + height * 0.5f, bounds.center.z);
-            BoxCollider box = zone.AddComponent<BoxCollider>();
-            box.isTrigger = true;
-            box.size = new Vector3(bounds.size.x + TriggerMargin * 2f, height, bounds.size.z + TriggerMargin * 2f);
-            seatTriggers.Add(box);
+            float height = ZoneHeight * rigScale;
+            GameObject zoneObject = new GameObject("NP_Seat_Zone_" + t.name);
+            zoneObject.layer = IgnoreRaycastLayer;   // does not block the controller rays or the gaze
+            zoneObject.transform.position = new Vector3(bounds.center.x, bounds.min.y + height * 0.5f, bounds.center.z);
+            BoxCollider zone = zoneObject.AddComponent<BoxCollider>();
+            zone.isTrigger = true;
+            zone.size = new Vector3(bounds.size.x + ZoneMargin * 2f, height, bounds.size.z + ZoneMargin * 2f);
+
+            seats.Add(new Seat
+            {
+                zone = zone,
+                seatPoint = new Vector3(bounds.center.x, bounds.min.y, bounds.center.z),
+                promptPoint = new Vector3(bounds.center.x, bounds.max.y + 0.2f * rigScale, bounds.center.z)
+            });
         }
     }
 
@@ -136,44 +155,97 @@ public sealed class Level2SitToggle : MonoBehaviour
         return true;
     }
 
-    // Verdadero si la cabeza está dentro del trigger de algún sillón.
-    private bool InSeatTrigger()
+    // Tracks which armchair zone the head is in; entering one shows the badge and vibrates the right hand.
+    private void UpdateNearbySeat()
     {
-        Vector3 head = origin.Camera.transform.position;
-        foreach (BoxCollider trigger in seatTriggers)
+        Seat current = null;
+        if (!seated && !busy)
         {
-            if (trigger != null && trigger.bounds.Contains(head)) return true;
+            Vector3 head = origin.Camera.transform.position;
+            foreach (Seat seat in seats)
+            {
+                if (seat.zone != null && seat.zone.bounds.Contains(head)) { current = seat; break; }
+            }
         }
-        return false;
+
+        bool playing = GameStateManager.CurrentState == GameState.PLAYING;
+        if (current != null && playing)
+        {
+            if (current != nearbySeat) ControllerHaptics.Pulse(XRNode.RightHand);
+            if (!InteractionPrompt.IsShownBy(this)) InteractionPrompt.Show(this, current.promptPoint, SitPrompt);
+        }
+        else
+        {
+            InteractionPrompt.Hide(this);
+        }
+        nearbySeat = current;
     }
 
-    private void SitDown()
+    private IEnumerator SitDown(Seat seat)
     {
-        if (seated || cameraOffset == null || origin.Camera == null || !InSeatTrigger()) return;
+        busy = true;
+        InteractionPrompt.Hide(this);
+        yield return ScreenFader.FadeOut(FadeSeconds);
 
-        // Altura actual de la cabeza sobre el piso del rig, para bajar solo lo necesario.
-        float head = origin.CameraInOriginSpacePos.y;
-        float drop = Mathf.Clamp(head - SeatedEyeHeight, 0f, MaxDrop);
-
-        // El offset de pie se toma ahora, no al iniciar: al arrancar aún puede traer la altura de ojos
-        // por defecto del prefab (1.36 × escala del rig) y al pararse el jugador quedaba "volando".
         standingOffset = cameraOffset.localPosition;
-        Vector3 position = standingOffset;
-        position.y -= drop;
-        targetOffset = position;
-        transitioning = true;
+        standingPosition = origin.transform.position;
+        standingRotation = origin.transform.rotation;
 
+        CharacterController controller = origin.GetComponent<CharacterController>();
+        if (controller != null) controller.enabled = false;
+
+        // Lower the view only as much as needed to reach chair height.
+        float drop = Mathf.Clamp(origin.CameraInOriginSpacePos.y - SeatedEyeHeight, 0f, MaxDrop);
+        cameraOffset.localPosition = standingOffset - Vector3.up * drop;
+
+        FaceSpider(seat.seatPoint);
+        Vector3 head = origin.Camera.transform.position;
+        origin.MoveCameraToWorldLocation(new Vector3(seat.seatPoint.x, head.y, seat.seatPoint.z));
+
+        if (controller != null) controller.enabled = true;
         seated = true;
         PlayerLocomotion.MovementLocked = true;
+
+        yield return ScreenFader.FadeIn(FadeSeconds);
+        LevelHud.ShowHint(StandHint, StandHintSeconds);
+        busy = false;
     }
 
-    private void StandUp()
+    private IEnumerator StandUp()
     {
-        if (!seated) return;
+        busy = true;
+        yield return ScreenFader.FadeOut(FadeSeconds);
+        RestoreStanding();
+        yield return ScreenFader.FadeIn(FadeSeconds);
+        busy = false;
+    }
 
-        targetOffset = standingOffset;
-        transitioning = true;
+    private void RestoreStanding()
+    {
+        if (origin != null && cameraOffset != null)
+        {
+            CharacterController controller = origin.GetComponent<CharacterController>();
+            if (controller != null) controller.enabled = false;
+            cameraOffset.localPosition = standingOffset;
+            origin.transform.SetPositionAndRotation(standingPosition, standingRotation);
+            if (controller != null) controller.enabled = true;
+        }
         seated = false;
         PlayerLocomotion.MovementLocked = false;
+    }
+
+    // Turns the rig so the player, once seated, looks towards the spider in the jar.
+    private void FaceSpider(Vector3 from)
+    {
+        GameObject spider = GameObject.Find(SpiderName);
+        if (spider == null) return;
+
+        Vector3 toSpider = spider.transform.position - from;
+        toSpider.y = 0f;
+        Vector3 forward = origin.Camera.transform.forward;
+        forward.y = 0f;
+        if (toSpider.sqrMagnitude < 0.01f || forward.sqrMagnitude < 0.01f) return;
+
+        origin.RotateAroundCameraUsingOriginUp(Vector3.SignedAngle(forward, toSpider, Vector3.up));
     }
 }

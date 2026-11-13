@@ -37,6 +37,18 @@ public sealed class Level5HingeHandle : MonoBehaviour
     private Quaternion closedLocalRotation;
     private Vector3 hingeLocalPoint;
     private bool initialized;
+    private bool hasHingePointOverride;
+    private Vector3 hingePointOverride;
+
+    /// <summary>
+    /// Sets the world point the hinge axis passes through, instead of <see cref="pivot"/> or the leaf origin.
+    /// Must be called before <see cref="Initialize"/>.
+    /// </summary>
+    public void SetHingePoint(Vector3 worldPoint)
+    {
+        hasHingePointOverride = true;
+        hingePointOverride = worldPoint;
+    }
 
     public float Angle => angle;
     public float OpenFraction => Mathf.Approximately(openAngle, 0f) ? 0f : Mathf.Clamp01(angle / openAngle);
@@ -55,7 +67,7 @@ public sealed class Level5HingeHandle : MonoBehaviour
         closedLocalPosition = leaf.localPosition;
         closedLocalRotation = leaf.localRotation;
         // Punto de la bisagra guardado en el espacio del padre (si el padre se mueve, la bisagra lo acompaña).
-        Vector3 hingeWorld = pivot != null ? pivot.position : leaf.position;
+        Vector3 hingeWorld = hasHingePointOverride ? hingePointOverride : pivot != null ? pivot.position : leaf.position;
         hingeLocalPoint = leaf.parent != null ? leaf.parent.InverseTransformPoint(hingeWorld) : hingeWorld;
         interactable = GetComponent<XRSimpleInteractable>();
         interactable.selectEntered.AddListener(OnGrab);
