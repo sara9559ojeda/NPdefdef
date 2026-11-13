@@ -8,6 +8,8 @@ using UnityEngine.XR.Interaction.Toolkit.Interactors;
 /// Mientras el mando la sujeta (grip o gatillo, rayo o mano), la hoja sigue el ángulo de la mano alrededor del eje
 /// vertical de la bisagra, dentro de los límites [0, openAngle]. Empieza cerrada. No usa física: no la empujan
 /// el jugador ni las arañas, y su collider gira con ella (cerrada bloquea el paso, abierta lo deja libre).
+/// Con <see cref="toggleOnPress"/> (puertas de las habitaciones) no hay que arrastrar: un toque (grip, o gatillo
+/// apuntándola o tocándola) la abre sola hasta openAngle y otro toque la cierra.
 /// </summary>
 [RequireComponent(typeof(XRSimpleInteractable))]
 public sealed class Level5HingeHandle : MonoBehaviour
@@ -18,12 +20,19 @@ public sealed class Level5HingeHandle : MonoBehaviour
     public Transform pivot;
     [Tooltip("Ángulo máximo de apertura en grados (con signo: indica el sentido).")]
     public float openAngle = 85f;
+    [Tooltip("Un toque abre o cierra la hoja sola, sin arrastrar la mano.")]
+    public bool toggleOnPress;
+    [Tooltip("Velocidad (grados por segundo) de la hoja al abrirse o cerrarse sola.")]
+    public float toggleSpeed = 120f;
 
     private XRSimpleInteractable interactable;
     private IXRSelectInteractor holder;
     private float reach;
     private float angle;
     private float grabOffset;
+    private bool toggleMoving;
+    private float toggleTarget;
+    private int lastToggleFrame = -1;
     private Vector3 closedLocalPosition;
     private Quaternion closedLocalRotation;
     private Vector3 hingeLocalPoint;
@@ -62,6 +71,11 @@ public sealed class Level5HingeHandle : MonoBehaviour
 
     private void OnGrab(SelectEnterEventArgs args)
     {
+        if (toggleOnPress)
+        {
+            if (GameStateManager.CurrentState == GameState.PLAYING) Toggle();
+            return;
+        }
         holder = args.interactorObject;
         reach = Level5HandPoint.ReachAtGrab(holder.GetAttachTransform(interactable), leaf);
         grabOffset = angle - HandAngle(Level5HandPoint.Point(holder.GetAttachTransform(interactable), reach));
@@ -74,8 +88,41 @@ public sealed class Level5HingeHandle : MonoBehaviour
 
     private void Update()
     {
-        if (holder == null || GameStateManager.CurrentState != GameState.PLAYING) return;
+        if (GameStateManager.CurrentState != GameState.PLAYING) return;
+        if (toggleOnPress)
+        {
+            // Gatillo mientras el mando apunta o toca la hoja (el grip llega por OnGrab).
+            if (TriggerPressedWhileHovering()) Toggle();
+            if (toggleMoving)
+            {
+                SetAngle(Mathf.MoveTowards(angle, toggleTarget, toggleSpeed * Time.deltaTime));
+                toggleMoving = !Mathf.Approximately(angle, toggleTarget);
+            }
+            return;
+        }
+        if (holder == null) return;
         SetAngle(HandAngle(Level5HandPoint.Point(holder.GetAttachTransform(interactable), reach)) + grabOffset);
+    }
+
+    /// <summary>Abre la hoja si está cerrada (o cerrándose) y la cierra si está abierta (o abriéndose).</summary>
+    public void Toggle()
+    {
+        if (lastToggleFrame == Time.frameCount) return;   // grip y gatillo en el mismo fotograma: un solo toque
+        lastToggleFrame = Time.frameCount;
+        bool opening = toggleMoving ? Mathf.Approximately(toggleTarget, 0f) : OpenFraction < 0.5f;
+        toggleTarget = opening ? openAngle : 0f;
+        toggleMoving = true;
+    }
+
+    private bool TriggerPressedWhileHovering()
+    {
+        if (interactable == null || !interactable.isHovered) return false;
+        foreach (IXRHoverInteractor hovering in interactable.interactorsHovering)
+        {
+            if (hovering is XRBaseInputInteractor input && input.activateInput != null && input.activateInput.ReadWasPerformedThisFrame())
+                return true;
+        }
+        return false;
     }
 
     /// <summary>Gira la hoja al ángulo dado (recortado a los límites), alrededor del eje de la bisagra.</summary>

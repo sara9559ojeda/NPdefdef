@@ -4,9 +4,11 @@ using UnityEngine;
 
 /// <summary>
 /// Patrulla segura y natural de la araña del Nivel 3.
-/// Recorre en bucle una ruta circular de puntos alrededor de su sitio (antes iba y volvía entre dos puntos con giros
-/// de 180° en el sitio). Gira de forma continua con un giro máximo por segundo, mira siempre hacia donde avanza,
-/// frena en las curvas y acelera con suavidad; de vez en cuando se detiene un momento.
+/// Deambula por su zona (un círculo de radio <see cref="patrolHalfDistance"/> alrededor de su sitio): al llegar a un
+/// punto elige otro al azar, a más de <see cref="minLegDistance"/>, en suelo libre (no encima de muebles), con el camino
+/// despejado, lejos de los orbes y sin acercarse al jugador. (Antes daba vueltas a un círculo de ~1,3 m y frenaba para
+/// girar cada poco: se movía muy poco y de forma rara.) Gira de forma continua con un giro máximo por segundo, mira
+/// siempre hacia donde avanza, frena en las curvas y acelera con suavidad; de vez en cuando se detiene un momento.
 /// Ignora sus propios colliders al buscar el suelo y no sale de su zona.
 /// </summary>
 public class Level3SpiderPatrolV2 : MonoBehaviour
@@ -20,10 +22,17 @@ public class Level3SpiderPatrolV2 : MonoBehaviour
     public float turnRate = 70f;
     [Tooltip("Aceleración (m/s²) al arrancar y frenar.")]
     public float acceleration = 0.12f;
-    [Tooltip("Puntos de la ruta circular.")]
-    public int routePoints = 6;
     [Tooltip("Probabilidad de detenerse un momento al llegar a un punto.")]
     [Range(0f, 1f)] public float pauseChance = 0.3f;
+
+    [Header("Deambular")]
+    [Tooltip("Distancia mínima (m) de cada tramo: evita pasitos cortos con giros en el sitio.")]
+    public float minLegDistance = 1.5f;
+    [Tooltip("Puntos que la araña no pisa (los orbes): no elige destinos a menos de keepAwayRadius de ellos.")]
+    public Vector3[] keepAway = new Vector3[0];
+    public float keepAwayRadius = 0f;
+    [Tooltip("No elige destinos a menos de esta distancia (m) del jugador ni camina a través de él.")]
+    public float playerClearance = 1.5f;
     public Animator animator;
     public float animatorSpeed = 0.28f;
     public Transform visualRoot;
@@ -49,12 +58,21 @@ public class Level3SpiderPatrolV2 : MonoBehaviour
     private Vector3 initialSpawn;
     private Quaternion initialRotation;
     private float stableGroundY;
-    private readonly System.Collections.Generic.List<Vector3> route = new System.Collections.Generic.List<Vector3>();
-    private int routeIndex;
+    private Vector3 destination;
+    private bool hasDestination;
+    private float nextPickTime;
     private float currentSpeed;
 
+    // Altura y radio del «cuerpo» con el que se comprueba que un destino y su camino están libres.
+    private const float BodyHeight = 0.35f;
+    private const float BodyRadius = 0.22f;
+    // Un apoyo más alto que esto sobre el suelo de la araña es un mueble: no se sube a él.
+    private const float MaxStepUp = 0.3f;
+    private const int PickAttempts = 24;
+
     public float CurrentSpeed => currentSpeed;
-    public int RouteCount => route.Count;
+    public bool HasDestination => hasDestination;
+    public Vector3 Destination => destination;
 
     private void OnEnable()
     {
@@ -80,34 +98,109 @@ public class Level3SpiderPatrolV2 : MonoBehaviour
         lastPosition = transform.position;
 
         SnapToGroundSafe();
-        BuildRoute();
+        PickDestination();
     }
 
-    // Ruta circular alrededor del sitio de la araña; se descartan los puntos dentro de muebles o paredes.
-    private void BuildRoute()
+    // Elige el siguiente punto de su zona: suelo libre, camino despejado, lejos de los orbes y del jugador.
+    private void PickDestination()
     {
-        route.Clear();
         float radius = Mathf.Max(0.4f, patrolHalfDistance);
-        float start = Random.Range(0f, 360f);
-        float direction = Random.value < 0.5f ? 1f : -1f;
-        int count = Mathf.Max(4, routePoints);
-        for (int i = 0; i < count; i++)
+        // La zona nunca debe disparar el «reinicio por salirse de la ruta».
+        maxRouteDistanceFromSpawn = Mathf.Max(maxRouteDistanceFromSpawn, radius + 1.5f);
+        Vector3? player = PlayerPosition();
+        float minLeg = Mathf.Min(minLegDistance, radius);
+
+        for (int attempt = 0; attempt < PickAttempts; attempt++)
         {
-            float angle = (start + direction * i * 360f / count) * Mathf.Deg2Rad;
-            float r = radius * Random.Range(0.8f, 1.15f);
-            Vector3 point = initialSpawn + new Vector3(Mathf.Sin(angle), 0f, Mathf.Cos(angle)) * r;
-            if (Physics.CheckSphere(point + Vector3.up * 0.35f, 0.25f, groundMask, QueryTriggerInteraction.Ignore) &&
-                !OnlySelfAt(point + Vector3.up * 0.35f, 0.25f)) continue;
-            route.Add(point);
+            Vector2 offset = Random.insideUnitCircle * radius;
+            Vector3 candidate = initialSpawn + new Vector3(offset.x, 0f, offset.y);
+            if (Flat(candidate - transform.position).magnitude < minLeg) continue;
+            if (!IsFreeDestination(candidate, player, out Vector3 grounded)) continue;
+            if (!PathIsClear(transform.position, grounded)) continue;
+            destination = grounded;
+            hasDestination = true;
+            return;
         }
-        if (route.Count < 2 && pointA != null && pointB != null)
+
+        // Sin destino válido ahora (p. ej. el jugador está en medio): vuelve a su sitio si puede, o lo intenta luego.
+        if (Flat(initialSpawn - transform.position).magnitude > 0.3f && PathIsClear(transform.position, initialSpawn))
         {
-            route.Clear();
-            route.Add(pointA.position);
-            route.Add(pointB.position);
+            destination = initialSpawn;
+            hasDestination = true;
+            return;
         }
-        routeIndex = 0;
+        hasDestination = false;
+        nextPickTime = Time.time + 1f;
     }
+
+    private bool IsFreeDestination(Vector3 candidate, Vector3? player, out Vector3 grounded)
+    {
+        grounded = candidate;
+        if (!FloorHeightAt(candidate, out float floorY)) return false;
+        grounded = new Vector3(candidate.x, floorY + groundOffset, candidate.z);
+
+        Vector3 body = grounded + Vector3.up * BodyHeight;
+        if (Physics.CheckSphere(body, BodyRadius, groundMask, QueryTriggerInteraction.Ignore) && !OnlySelfAt(body, BodyRadius)) return false;
+        foreach (Vector3 point in keepAway)
+            if (Flat(point - grounded).magnitude < keepAwayRadius) return false;
+        if (player.HasValue && Flat(player.Value - grounded).magnitude < playerClearance) return false;
+        return true;
+    }
+
+    // Altura del suelo en un punto. Si lo primero que hay debajo está más alto que el suelo de la araña, es un mueble.
+    private bool FloorHeightAt(Vector3 point, out float floorY)
+    {
+        floorY = stableGroundY;
+        Vector3 origin = new Vector3(point.x, stableGroundY + groundRayHeight, point.z);
+        foreach (RaycastHit hit in Physics.RaycastAll(origin, Vector3.down, groundRayHeight * 3f, groundMask, QueryTriggerInteraction.Ignore)
+                     .OrderBy(candidate => candidate.distance))
+        {
+            if (hit.collider == null || hit.collider.transform == transform || hit.collider.transform.IsChildOf(transform)) continue;
+            if (hit.collider.GetComponentInParent<Level3SpiderPatrolV2>() != null) continue;
+            if (hit.normal.y < 0.7f) return false;                       // pared o borde
+            if (hit.point.y > stableGroundY + MaxStepUp) return false;   // encima de un mueble
+            floorY = hit.point.y;
+            return true;
+        }
+        return false;
+    }
+
+    // Camino recto despejado para el cuerpo de la araña (muebles, paredes, orbes y el propio jugador lo cortan).
+    private bool PathIsClear(Vector3 from, Vector3 to)
+    {
+        Vector3 path = to - from;
+        path.y = 0f;
+        float length = path.magnitude;
+        if (length < 0.01f) return true;
+        Vector3 start = new Vector3(from.x, stableGroundY + BodyHeight, from.z);
+        foreach (RaycastHit hit in Physics.SphereCastAll(start, BodyRadius, path / length, length, groundMask, QueryTriggerInteraction.Ignore))
+        {
+            if (hit.distance <= 0f) continue;   // ya solapado al empezar: lo decide la comprobación del destino
+            Transform other = hit.collider.transform;
+            if (other == transform || other.IsChildOf(transform)) continue;
+            if (hit.collider.GetComponentInParent<Level3SpiderPatrolV2>() != null) continue;
+            if (hit.normal.y > 0.7f) continue;  // suelo
+            return false;
+        }
+        Vector3? player = PlayerPosition();
+        if (player.HasValue && DistanceToSegment(Flat(player.Value), Flat(from), Flat(to)) < playerClearance) return false;
+        return true;
+    }
+
+    private static Vector3? PlayerPosition()
+    {
+        Camera head = Camera.main;
+        return head != null ? head.transform.position : (Vector3?)null;
+    }
+
+    private static float DistanceToSegment(Vector3 point, Vector3 a, Vector3 b)
+    {
+        Vector3 ab = b - a;
+        float t = ab.sqrMagnitude > 0.0001f ? Mathf.Clamp01(Vector3.Dot(point - a, ab) / ab.sqrMagnitude) : 0f;
+        return Vector3.Distance(point, a + ab * t);
+    }
+
+    private static Vector3 Flat(Vector3 v) { v.y = 0f; return v; }
 
     private bool OnlySelfAt(Vector3 center, float radius)
     {
@@ -129,7 +222,12 @@ public class Level3SpiderPatrolV2 : MonoBehaviour
             ResetToSafeRoutePosition();
         }
 
-        if (paused || waiting || route.Count < 2)
+        if (!hasDestination && !paused && !waiting && Time.time >= nextPickTime)
+        {
+            PickDestination();
+        }
+
+        if (paused || waiting || !hasDestination)
         {
             currentSpeed = 0f;
             SetAnimatorMoving(false, 0f);
@@ -138,14 +236,13 @@ public class Level3SpiderPatrolV2 : MonoBehaviour
         }
 
         float cruise = moveSpeed * (reduced ? reducedSpeedMultiplier : 1f);
-        Vector3 destination = route[routeIndex];
         Vector3 flatDirection = destination - transform.position;
         flatDirection.y = 0f;
         float distance = flatDirection.magnitude;
 
         if (distance <= 0.2f)
         {
-            routeIndex = (routeIndex + 1) % route.Count;
+            PickDestination();
             if (Random.value < pauseChance)
             {
                 StartCoroutine(WaitAtEndpoint(Random.Range(endpointPauseMin, endpointPauseMax)));
@@ -354,6 +451,12 @@ public class Level3SpiderPatrolV2 : MonoBehaviour
                 continue;
             }
 
+            // Un apoyo muy por encima de su suelo es un mueble (p. ej. pasa junto a una mesa): no se sube de golpe.
+            if (hit.point.y > stableGroundY + MaxStepUp)
+            {
+                continue;
+            }
+
             Vector3 position = transform.position;
             position.y = hit.point.y + groundOffset;
             transform.position = position;
@@ -409,6 +512,8 @@ public class Level3SpiderPatrolV2 : MonoBehaviour
 
         lastPosition = resetPosition;
         target = pointB != null ? pointB : pointA;
+        currentSpeed = 0f;
+        PickDestination();
     }
 
     private void EnsureVisible()

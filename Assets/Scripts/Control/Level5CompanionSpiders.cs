@@ -180,7 +180,8 @@ public sealed class Level5CompanionSpiders : MonoBehaviour
             Vector3 direction = toStart.sqrMagnitude > 0.01f ? toStart.normalized : Vector3.back;
             Vector3 wanted = target + direction * 1.4f;
             if (!grid.TryNearest(wanted, out Vector3 spot, start, minSpawn)) continue;
-            if (taken.Any(p => Flat(p - spot).magnitude < settings.minSpacingBetweenSpiders * 0.5f)) continue;
+            // La misma separación que el resto: con la mitad, dos arañas de tareas cercanas aparecían casi una encima de otra.
+            if (taken.Any(p => Flat(p - spot).magnitude < settings.minSpacingBetweenSpiders)) continue;
             plan.Add(new SpiderSpawn { position = spot, followsPlayer = allFollow, followsNearby = original || allNearby, leash = settings.taskLeash });
             taken.Add(spot);
         }
@@ -282,9 +283,34 @@ public sealed class Level5CompanionSpiders : MonoBehaviour
                 }
                 c.goal.position = now;
             }
+
+            // Separación entre arañas: ninguna se mete a menos de minSpacingBetweenSpiders de otra (antes no se evitaban
+            // y las que seguían al jugador iban al mismo punto, una encima de otra). Si su paso la acercaría, se deshace
+            // y elige otro destino.
+            if (c.hasLastPosition && Flat(now - c.lastPosition).magnitude > 0.0001f && StepCrowdsAnother(c, c.lastPosition, now))
+            {
+                spider.position = c.lastPosition;
+                now = c.lastPosition;
+                c.goal.position = now;
+                c.nextWander = 0f;
+            }
             c.lastPosition = now;
             c.hasLastPosition = true;
         }
+    }
+
+    // ¿Ir de «from» a «to» deja a la araña más cerca de otra y dentro de la separación mínima?
+    private bool StepCrowdsAnother(Companion self, Vector3 from, Vector3 to)
+    {
+        float spacing = settings.minSpacingBetweenSpiders;
+        foreach (Companion other in companions)
+        {
+            if (other == self || other.patrol == null) continue;
+            Vector3 position = other.patrol.transform.position;
+            float after = Flat(to - position).magnitude;
+            if (after < spacing && after < Flat(from - position).magnitude - 0.0005f) return true;
+        }
+        return false;
     }
 
     /// <summary>Último punto válido de cada araña (para las pruebas).</summary>
@@ -340,6 +366,13 @@ public sealed class Level5CompanionSpiders : MonoBehaviour
         Vector3 desiredFromPlayer = Flat(desired - player);
         if (desiredFromPlayer.magnitude < settings.minDistanceToPlayer)
         {
+            desired = spider;
+        }
+
+        // Ni un destino pegado a otra araña: la que deambula busca otro punto; la que sigue al jugador espera.
+        if (StepCrowdsAnother(c, spider, desired))
+        {
+            c.nextWander = 0f;
             desired = spider;
         }
 

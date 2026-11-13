@@ -15,7 +15,7 @@ namespace NeuroPhobia.Tests
 {
     /// <summary>
     /// Nivel 3 (aproximación progresiva): un solo controlador decide el progreso, el nivel no termina antes de cumplir
-    /// la misión (alcanzar cada orbe en orden y mantenerlo en la mirada), la cantidad de arañas sale de la configuración
+    /// la misión (agarrar cada orbe en orden, estando cerca), la cantidad de arañas sale de la configuración
     /// según el grado y su movimiento es natural.
     /// </summary>
     public class Nivel3PlayModeTests
@@ -123,32 +123,35 @@ namespace NeuroPhobia.Tests
             GameObject orb2 = (GameObject)Get(mission, "orb2");
             Assert.IsTrue(orb1.activeSelf && !orb2.activeSelf, "Al empezar solo debe verse el primer orbe.");
 
-            // Cerca del primer orbe pero mirando hacia otro lado: no cuenta.
+            // Cerca del primer orbe y mirándolo, sin agarrarlo: no cuenta (el orbe se agarra, no se mira).
             Vector3 near1 = orb1.transform.position + new Vector3(0.8f, 1.0f, 0f);
-            yield return Hold(near1, near1 + (near1 - orb1.transform.position), 4f);
-            Assert.AreEqual(0, (int)Get(mission, "ReachedOrbs"), "Estar cerca sin mirar el orbe no debe contar.");
-
-            // Mirándolo desde lejos: tampoco.
-            Vector3 far1 = orb1.transform.position + new Vector3(5f, 1.0f, 0f);
-            yield return Hold(far1, orb1.transform.position, 4f);
-            Assert.AreEqual(0, (int)Get(mission, "ReachedOrbs"), "Mirar el orbe de lejos no debe contar.");
-
-            // Llegar al segundo orbe (aún oculto) antes que al primero: no cuenta.
-            Vector3 near2 = orb2.transform.position + new Vector3(0.8f, 1.0f, 0f);
-            yield return Hold(near2, orb2.transform.position, 4f);
-            Assert.AreEqual(0, (int)Get(mission, "ReachedOrbs"), "Los orbes se alcanzan en orden.");
-
-            // Cerca y mirándolo el tiempo pedido: cuenta el primero, y el nivel sigue.
             yield return Hold(near1, orb1.transform.position, 4f);
-            Assert.AreEqual(1, (int)Get(mission, "ReachedOrbs"), "Cerca y mirando debe alcanzar el primer orbe.");
+            Assert.AreEqual(0, (int)Get(mission, "ReachedOrbs"), "Mirar el orbe sin agarrarlo no debe contar.");
+
+            // Agarrarlo desde lejos (con el rayo): tampoco.
+            Vector3 far1 = orb1.transform.position + new Vector3(5f, 1.0f, 0f);
+            yield return Hold(far1, orb1.transform.position, 0.2f);
+            Assert.IsFalse((bool)Call(mission, "TryGrab", orb1), "Agarrar el orbe de lejos no debe contar.");
+            Assert.AreEqual(0, (int)Get(mission, "ReachedOrbs"));
+
+            // Agarrar el segundo orbe (aún oculto) antes que el primero: no cuenta.
+            Vector3 near2 = orb2.transform.position + new Vector3(0.8f, 1.0f, 0f);
+            yield return Hold(near2, orb2.transform.position, 0.2f);
+            Assert.IsFalse((bool)Call(mission, "TryGrab", orb2), "Los orbes se agarran en orden.");
+            Assert.AreEqual(0, (int)Get(mission, "ReachedOrbs"), "Los orbes se agarran en orden.");
+
+            // Cerca y agarrándolo: cuenta el primero, y el nivel sigue.
+            yield return Hold(near1, orb1.transform.position, 0.2f);
+            Assert.IsTrue((bool)Call(mission, "TryGrab", orb1), "Cerca y agarrándolo debe contar el primer orbe.");
+            Assert.AreEqual(1, (int)Get(mission, "ReachedOrbs"));
             Assert.IsFalse((bool)Get(mission, "IsComplete"), "Con un orbe el nivel no debe terminar.");
             Assert.AreEqual("PLAYING", State(), "Con un orbe el nivel debe seguir en juego.");
 
-            // Segundo orbe: cerca sin mirar, no; mirando, sí, y entonces termina.
-            yield return Hold(near2, near2 + (near2 - orb2.transform.position), 4f);
+            // Segundo orbe: mirarlo de cerca no basta; agarrarlo sí, y entonces termina.
+            yield return Hold(near2, orb2.transform.position, 4f);
             Assert.AreEqual(1, (int)Get(mission, "ReachedOrbs"));
             Assert.IsFalse((bool)Get(mission, "IsComplete"));
-            yield return Hold(near2, orb2.transform.position, 4f);
+            Assert.IsTrue((bool)Call(mission, "TryGrab", orb2));
             Assert.AreEqual(2, (int)Get(mission, "ReachedOrbs"));
             Assert.IsTrue((bool)Get(mission, "IsComplete"), "Con la misión cumplida el nivel debe terminar.");
         }

@@ -211,6 +211,15 @@ public sealed class Level1SequentialGazeFlow : MonoBehaviour
 
         for (int index = 0; index < cards.Count; index++)
         {
+            // Las imágenes no deben empujar al jugador: la 4.ª está a 0,31 m de la pared y su collider sólido dejaba la
+            // cápsula del jugador atrapada entre imagen y pared, y la física la sacaba de la oficina. Como trigger el rayo
+            // de las métricas de mirada la sigue detectando (Queries Hit Triggers activado) y la mirada del flujo usa el
+            // dibujo (Renderer), no el collider.
+            foreach (Collider cardCollider in cards[index].GetComponentsInChildren<Collider>(true))
+            {
+                cardCollider.isTrigger = true;
+            }
+
             cards[index].SetActive(index == 0);
         }
     }

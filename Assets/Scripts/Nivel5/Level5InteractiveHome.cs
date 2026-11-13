@@ -150,10 +150,59 @@ public sealed class Level5InteractiveHome : MonoBehaviour
         Level5HingeHandle hinge = leaf.gameObject.AddComponent<Level5HingeHandle>();
         hinge.leaf = leaf;
         hinge.pivot = pivot;
-        hinge.openAngle = Mathf.Abs(maxAngle) * OpeningSign(leaf, pivot, maxAngle);
+        // Puertas de las habitaciones («puerta sala a cuarto», «puerta cuarto a baño»): abren hacia dentro del cuarto al
+        // que llevan y se abren o cierran con un toque. (Antes el sentido salía de un desempate casi al azar y había que
+        // arrastrar la mano en arco.)
+        bool roomDoor = TryRoomDoorSign(leaf, pivot, maxAngle, out float roomSign);
+        hinge.openAngle = Mathf.Abs(maxAngle) * (roomDoor ? roomSign : OpeningSign(leaf, pivot, maxAngle));
+        hinge.toggleOnPress = roomDoor;
         hinge.Initialize();
         hinges.Add(hinge);
         return hinge;
+    }
+
+    // Pisos de cada cuarto (nombres de la escena) según la palabra del destino en «puerta X a Y».
+    private static readonly (string word, string floor)[] RoomFloors =
+    {
+        ("cuarto", "Piso_Cuarto"), ("baño", "Piso_Bano"), ("bano", "Piso_Bano"), ("sala", "Piso_Sala"), ("cocina", "Piso_Cocina")
+    };
+
+    /// <summary>
+    /// Sentido de una puerta de habitación: el que deja la hoja abierta del lado del cuarto al que lleva
+    /// (el «Y» de «puerta X a Y»), es decir, se empuja al entrar. Devuelve false si la hoja no es de una puerta de paso
+    /// con ese nombre o no se encuentra el piso del cuarto.
+    /// </summary>
+    public static bool TryRoomDoorSign(Transform leaf, Transform pivot, float angle, out float sign)
+    {
+        sign = 1f;
+        if (leaf.name != "door_body") return false;
+        string destination = null;
+        for (Transform p = leaf.parent; p != null && destination == null; p = p.parent)
+        {
+            string name = p.name.Trim().ToLowerInvariant();
+            int split = name.LastIndexOf(" a ", System.StringComparison.Ordinal);
+            if (name.StartsWith("puerta ") && split > 0) destination = name.Substring(split + 3).Trim();
+        }
+        if (destination == null) return false;
+
+        string floorName = RoomFloors.Where(r => r.word == destination).Select(r => r.floor).FirstOrDefault();
+        Transform floor = floorName != null
+            ? FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None).FirstOrDefault(t => t.name == floorName)
+            : null;
+        Renderer floorRenderer = floor != null ? floor.GetComponentInChildren<Renderer>() : null;
+        if (floorRenderer == null) return false;
+
+        // Normal horizontal de la hoja cerrada (su eje más delgado) y lado en el que está el cuarto de destino.
+        BoxCollider box = leaf.GetComponent<BoxCollider>();
+        Vector3 thin = box != null && box.size.z < box.size.x ? leaf.forward : leaf.right;
+        Vector3 normal = Flat(thin).normalized;
+        Vector3 hinge = pivot != null ? pivot.position : leaf.position;
+        float roomSide = Mathf.Sign(Vector3.Dot(Flat(floorRenderer.bounds.center - hinge), normal));
+
+        Vector3 closed = LeafCenter(leaf);
+        Vector3 plusCenter = Quaternion.AngleAxis(Mathf.Abs(angle), Vector3.up) * (closed - hinge) + hinge;
+        sign = Mathf.Sign(Vector3.Dot(Flat(plusCenter - hinge), normal)) == roomSide ? 1f : -1f;
+        return true;
     }
 
     // Prueba los dos sentidos: gana el que, abierto, choca con menos cosas (el cuerpo del mueble, una pared);

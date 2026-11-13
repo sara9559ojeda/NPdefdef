@@ -5,6 +5,7 @@ using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using UnityEngine.XR;
+using UnityEngine.XR.Interaction.Toolkit.Locomotion.Turning;
 using UnityEngine.XR.Interaction.Toolkit.UI;
 using UI = NeuroPhobiaUITheme;
 
@@ -69,6 +70,7 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
 
     private void Start()
     {
+        DisableTurnAround();
         RebuildMenu();
         // Contexto del backend en el Refugio (nunca durante la exposición): grado previo y nivel permitido.
         FastAPIClient api = Api();
@@ -135,6 +137,24 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         }
 
         ShowMain();
+    }
+
+    // En el menú, el giro del rig XR con el stick derecho (atrás 180°, izquierda/derecha a saltos o continuo) movía al
+    // jugador y el menú, que sigue la vista con retardo, se deslizaba hasta volver a ponerse delante. Aquí se quita
+    // todo el giro con el stick; el desplazamiento con el stick izquierdo sigue igual. Girar la cabeza o el cuerpo
+    // de verdad sigue funcionando.
+    private static void DisableTurnAround()
+    {
+        foreach (SnapTurnProvider snap in FindObjectsByType<SnapTurnProvider>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            snap.enableTurnAround = false;
+            snap.enableTurnLeftRight = false;
+        }
+
+        foreach (ContinuousTurnProvider turn in FindObjectsByType<ContinuousTurnProvider>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            turn.enabled = false;
+        }
     }
 
     // Sin skybox: el cartel se ve sobre fondo sólido (los controles siguen visibles).

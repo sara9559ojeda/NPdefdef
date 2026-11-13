@@ -11,11 +11,11 @@ public sealed class Level3Settings : ScriptableObject
     public const string ResourceName = "Level3Settings";
 
     [Header("Misión (pendiente de validar clínicamente)")]
-    [Tooltip("Distancia máxima (m) entre la cabeza y el orbe para que cuente la mirada.")]
+    [Tooltip("Distancia máxima (m) entre la cabeza y el orbe para poder agarrarlo.")]
     public float reachDistance = 1.5f;
-    [Tooltip("Segundos seguidos mirando el orbe, ya cerca de él, para alcanzarlo.")]
+    [Tooltip("Heredado: ya no se usa (el orbe se agarra, no se mira).")]
     public float gazeSeconds = 3f;
-    [Tooltip("Ángulo (grados) entre la mirada y el orbe que todavía cuenta como «mirarlo».")]
+    [Tooltip("Heredado: ya no se usa (el orbe se agarra, no se mira).")]
     public float gazeAngle = 14f;
 
     [Header("Arañas según el grado de fobia (pendiente de validar clínicamente)")]
@@ -35,8 +35,10 @@ public sealed class Level3Settings : ScriptableObject
     public float moveSpeed = 0.14f;
     [Tooltip("Giro máximo (grados por segundo). Bajo = sin giros bruscos.")]
     public float turnRate = 70f;
-    [Tooltip("Radio (m) de la ruta circular de cada araña.")]
-    public float routeRadius = 1.3f;
+    [Tooltip("Radio (m) de la zona por la que deambula cada araña alrededor de su sitio.")]
+    public float routeRadius = 5f;
+    [Tooltip("Al deambular, ninguna araña elige un destino a menos de esta distancia (m) del jugador ni camina a través de él.")]
+    public float spiderPlayerClearance = 1.5f;
 
     /// <summary>Arañas en total para un grado (1–5). Un grado ausente o fuera de rango usa el del grado 1.</summary>
     public int SpiderCountForGrade(int phobiaGrade)

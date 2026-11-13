@@ -61,13 +61,16 @@ public sealed class Level3OrbSpiders : MonoBehaviour
         var placed = new List<Vector3> { original.position };
         int count = 0;
 
+        // La araña original deambula igual que los clones: misma zona, lejos de los orbes y del jugador.
+        ConfigureWander(original.GetComponent<Level3SpiderPatrolV2>(), settings, orbs, settings.routeRadius);
+
         // Cerca de los orbes, repartidas por igual en anillo (2,5–4,5 m), sin tapar el orbe.
         for (int i = 0; i < nearOrbs && orbs.Length > 0; i++)
         {
             Transform orb = orbs[i % orbs.Length];
             if (TryFindSpot(settings, orb.position, settings.minDistanceFromOrb + 0.3f, settings.minDistanceFromOrb + 2.3f, player, orbs, placed, out Vector3 spot))
             {
-                Spawn(original, spot, settings, ++count);
+                Spawn(original, spot, settings, orbs, ++count);
                 placed.Add(spot);
             }
         }
@@ -83,7 +86,7 @@ public sealed class Level3OrbSpiders : MonoBehaviour
             {
                 Vector3 candidate = new Vector3(Random.Range(area.min.x, area.max.x), area.max.y, Random.Range(area.min.z, area.max.z));
                 if (!IsFree(settings, candidate, player, orbs, placed, out Vector3 grounded)) continue;
-                Spawn(original, grounded, settings, ++count);
+                Spawn(original, grounded, settings, orbs, ++count);
                 placed.Add(grounded);
                 target--;
             }
@@ -130,7 +133,7 @@ public sealed class Level3OrbSpiders : MonoBehaviour
 
     private static float Flat(Vector3 v) { v.y = 0f; return v.magnitude; }
 
-    private static void Spawn(Transform original, Vector3 position, Level3Settings settings, int number)
+    private static void Spawn(Transform original, Vector3 position, Level3Settings settings, Transform[] orbs, int number)
     {
         GameObject clone = Instantiate(original.gameObject, position, Quaternion.Euler(0f, Random.Range(0f, 360f), 0f));
         clone.name = "NP_L3_OrbSpider_" + number;
@@ -140,10 +143,20 @@ public sealed class Level3OrbSpiders : MonoBehaviour
             // Start() aún no corrió: se sueltan los puntos del original para que el clon cree su propia ruta.
             patrol.pointA = null;
             patrol.pointB = null;
-            patrol.patrolHalfDistance = settings.routeRadius * Random.Range(0.8f, 1.2f);
             patrol.moveSpeed = settings.moveSpeed * Random.Range(0.85f, 1.15f);
             patrol.turnRate = settings.turnRate;
+            ConfigureWander(patrol, settings, orbs, settings.routeRadius * Random.Range(0.8f, 1.2f));
         }
         clone.SetActive(true);
+    }
+
+    // Zona por la que deambula, puntos que no pisa (los orbes) y distancia al jugador.
+    private static void ConfigureWander(Level3SpiderPatrolV2 patrol, Level3Settings settings, Transform[] orbs, float radius)
+    {
+        if (patrol == null) return;
+        patrol.patrolHalfDistance = radius;
+        patrol.keepAway = orbs.Select(o => o.position).ToArray();
+        patrol.keepAwayRadius = settings.minDistanceFromOrb;
+        patrol.playerClearance = settings.spiderPlayerClearance;
     }
 }

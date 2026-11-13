@@ -2,13 +2,14 @@ using System.Collections;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.XR.Interaction.Toolkit.Interactables;
+using UnityEngine.XR.Interaction.Toolkit.Interactors;
 
 /// <summary>
 /// Único controlador del progreso del Nivel 3 (aproximación progresiva).
-/// Misión: alcanzar los orbes en orden. Un orbe se alcanza cuando la cabeza está a menos de
-/// <see cref="Level3Settings.reachDistance"/> y la persona lo mantiene en la mirada
-/// <see cref="Level3Settings.gazeSeconds"/> segundos seguidos. Estar cerca sin mirarlo, o mirarlo de lejos, no cuenta.
-/// El nivel solo termina al alcanzar el último orbe. Otros controladores antiguos del nivel se desactivan al empezar.
+/// Misión: agarrar los orbes en orden. Un orbe se agarra con el mando (grip, o gatillo mientras se apunta o se toca)
+/// estando la cabeza a menos de <see cref="Level3Settings.reachDistance"/>. Mirarlo, o agarrarlo de lejos con el rayo,
+/// no cuenta. El nivel solo termina al agarrar el último orbe. Otros controladores antiguos del nivel se desactivan al empezar.
 /// </summary>
 public class NPLevel3RealOrbs : MonoBehaviour
 {
@@ -22,24 +23,21 @@ public class NPLevel3RealOrbs : MonoBehaviour
     public string nextScene = "Nivel4";
     public AudioClip collectClip;
 
-    public const string MissionText = "Misión: alcanza los orbes en orden. Acércate a cada orbe y mantenlo en la mirada.";
+    public const string MissionText = "Misión: agarra los orbes en orden. Acércate a cada orbe y agárralo con el mando.";
 
     private GameObject[] orbs;
     private int count;
     private bool done;
-    private float gazeTimer;
     private Level3Settings settings;
     private TMP_Text progressText;
     private TMP_Text messageText;
     private Image progressFill;
-    private Image gazeFill;
     private Canvas hud;
 
     public int ReachedOrbs => count;
     public int TotalOrbs => orbs != null ? orbs.Length : 0;
     public bool IsComplete => done;
     public GameObject CurrentOrb => orbs != null && count < orbs.Length ? orbs[count] : null;
-    public float GazeProgress => settings != null ? Mathf.Clamp01(gazeTimer / Mathf.Max(0.01f, settings.gazeSeconds)) : 0f;
 
     private void Awake()
     {
@@ -50,7 +48,12 @@ public class NPLevel3RealOrbs : MonoBehaviour
     {
         settings = Level3Settings.Load();
         orbs = new[] { orb1, orb2 };
-        for (int i = 0; i < orbs.Length; i++) if (orbs[i] != null) orbs[i].SetActive(i == 0);
+        for (int i = 0; i < orbs.Length; i++)
+        {
+            if (orbs[i] == null) continue;
+            PrepareGrab(orbs[i]);
+            orbs[i].SetActive(i == 0);
+        }
         BuildHUD();
         UpdateHUD();
     }
@@ -71,6 +74,21 @@ public class NPLevel3RealOrbs : MonoBehaviour
         }
     }
 
+    // El orbe se puede agarrar con el mando: el rayo y la mano de XRI no detectan colliders «trigger», así que el suyo
+    // pasa a sólido, pero el cuerpo del jugador lo ignora (no tropieza con él).
+    private void PrepareGrab(GameObject orb)
+    {
+        Collider collider = orb.GetComponent<Collider>();
+        if (collider == null) collider = orb.AddComponent<SphereCollider>();
+        collider.isTrigger = false;
+        foreach (CharacterController body in FindObjectsByType<CharacterController>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            Physics.IgnoreCollision(collider, body);
+
+        XRSimpleInteractable interactable = orb.GetComponent<XRSimpleInteractable>();
+        if (interactable == null) interactable = orb.AddComponent<XRSimpleInteractable>();
+        interactable.selectEntered.AddListener(_ => TryGrab(orb));
+    }
+
     private void Update()
     {
         if (done || GameStateManager.CurrentState != GameState.PLAYING) return;
@@ -79,21 +97,39 @@ public class NPLevel3RealOrbs : MonoBehaviour
         Camera head = NeuroPhobiaWorldPanel.GameplayCamera();
         if (head == null) return;
 
-        bool looking = IsReachingAndLooking(head.transform, target.transform.position, settings);
-        gazeTimer = looking ? gazeTimer + Time.deltaTime : 0f;
-        if (messageText != null && looking) messageText.text = "Mantén la mirada en el orbe…";
-        else if (messageText != null) messageText.text = Hint(head.transform, target.transform.position);
-        if (gazeFill != null) gazeFill.fillAmount = GazeProgress;
+        // Gatillo mientras el mando apunta o toca el orbe: también lo agarra (el grip llega por selectEntered).
+        if (TriggerPressedOn(target)) TryGrab(target);
+        if (done || CurrentOrb != target) return;
 
-        if (gazeTimer >= settings.gazeSeconds) Reach(target);
+        if (messageText != null) messageText.text = Hint(head.transform, target.transform.position);
     }
 
-    /// <summary>Cabeza cerca del orbe y orbe en el centro de la mirada.</summary>
-    public static bool IsReachingAndLooking(Transform head, Vector3 orb, Level3Settings settings)
+    /// <summary>Agarra el orbe si es el que toca y la cabeza está lo bastante cerca. Devuelve true si cuenta.</summary>
+    public bool TryGrab(GameObject orb)
     {
-        Vector3 toOrb = orb - head.position;
-        if (toOrb.magnitude > settings.reachDistance) return false;
-        return Vector3.Angle(head.forward, toOrb) <= settings.gazeAngle;
+        if (done || orb == null || orb != CurrentOrb || GameStateManager.CurrentState != GameState.PLAYING) return false;
+        Camera head = NeuroPhobiaWorldPanel.GameplayCamera();
+        if (head == null || !IsWithinReach(head.transform, orb.transform.position, settings)) return false;
+        Reach(orb);
+        return true;
+    }
+
+    /// <summary>Cabeza a menos de la distancia de alcance del orbe.</summary>
+    public static bool IsWithinReach(Transform head, Vector3 orb, Level3Settings settings)
+    {
+        return Vector3.Distance(head.position, orb) <= settings.reachDistance;
+    }
+
+    private static bool TriggerPressedOn(GameObject orb)
+    {
+        XRSimpleInteractable interactable = orb.GetComponent<XRSimpleInteractable>();
+        if (interactable == null || !interactable.isHovered) return false;
+        foreach (var hovering in interactable.interactorsHovering)
+        {
+            if (hovering is XRBaseInputInteractor input && input.activateInput != null && input.activateInput.ReadWasPerformedThisFrame())
+                return true;
+        }
+        return false;
     }
 
     private string Hint(Transform head, Vector3 orb)
@@ -101,13 +137,12 @@ public class NPLevel3RealOrbs : MonoBehaviour
         float distance = Vector3.Distance(head.position, orb);
         return distance > settings.reachDistance
             ? "Camina hacia el orbe luminoso (" + distance.ToString("0") + " m)."
-            : "Mira el orbe para alcanzarlo.";
+            : "Agarra el orbe con el grip o el gatillo.";
     }
 
     private void Reach(GameObject target)
     {
         target.SetActive(false);
-        gazeTimer = 0f;
         count++;
         if (collectClip != null) AudioSource.PlayClipAtPoint(collectClip, target.transform.position);
 
@@ -148,8 +183,7 @@ public class NPLevel3RealOrbs : MonoBehaviour
         messageText = MakeText(panel.transform, "Camina hacia el orbe luminoso.", 22, FontStyles.Normal);
         SetRect(messageText.rectTransform, .04f, .24f, .96f, .40f);
 
-        progressFill = Bar(panel.transform, "Barra", .07f, .13f, .93f, .19f, new Color(.1f, .8f, .72f, 1));
-        gazeFill = Bar(panel.transform, "Mirada", .07f, .05f, .93f, .09f, new Color(.95f, .78f, .35f, 1));
+        progressFill = Bar(panel.transform, "Barra", .07f, .09f, .93f, .17f, new Color(.1f, .8f, .72f, 1));
 
         NeuroPhobiaHudFollow.Attach(hud, new Vector2(760f, 330f), new Vector2(-0.55f, -0.45f), 0.8f);
     }
@@ -199,9 +233,8 @@ public class NPLevel3RealOrbs : MonoBehaviour
     private void UpdateHUD()
     {
         int total = TotalOrbs;
-        if (progressText) progressText.text = "Orbes alcanzados: " + count + " / " + total;
+        if (progressText) progressText.text = "Orbes agarrados: " + count + " / " + total;
         if (progressFill) progressFill.fillAmount = total > 0 ? count / (float)total : 0f;
-        if (gazeFill) gazeFill.fillAmount = 0f;
     }
 
     private IEnumerator Finish()

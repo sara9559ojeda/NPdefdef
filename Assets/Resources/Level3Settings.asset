@@ -27,4 +27,5 @@ MonoBehaviour:
   minDistanceBetweenSpiders: 2.5
   moveSpeed: 0.14
   turnRate: 70
-  routeRadius: 1.3
+  routeRadius: 5
+  spiderPlayerClearance: 1.5
