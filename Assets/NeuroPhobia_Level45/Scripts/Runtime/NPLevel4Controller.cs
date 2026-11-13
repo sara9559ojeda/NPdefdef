@@ -52,9 +52,8 @@ namespace NeuroPhobia.Level45
         private float lookAngle;
         private Canvas levelHudCanvas;
 
-        // NUEVO:
-        // al entrar al radio del orbe, el punto queda activado.
-        // Ya no hay que permanecer encima del orbe durante la mirada.
+        // Entering the orb radius once arms the point; after that only the look is counted and the
+        // spiders keep moving naturally.
         private bool pointArmed;
 
         private void Start()
@@ -128,9 +127,7 @@ namespace NeuroPhobia.Level45
                 return;
             }
 
-            // FASE 2:
-            // ya activado el orbe, la distancia deja de importar.
-            // La araña queda detenida y solo cuenta la mirada.
+            // Phase 2: once the point is armed the distance no longer matters; only the look is counted.
             if (lookingAtSpider)
             {
                 currentLookTime += Time.deltaTime;
@@ -168,28 +165,28 @@ namespace NeuroPhobia.Level45
             lostLookTime = 0f;
             bestAttempt = 0f;
 
-            if (spiderPatrol != null)
-                spiderPatrol.PausePatrol();
-
             PlayClip(checkpointClip);
         }
 
+        // Every spider of the level counts for the look: the one on the route and the ones that roam on their
+        // own (Level4IndependentSpiders gives each of them its own patrol before this runs).
         private void FindSpiderVisuals()
         {
             spiderVisuals.Clear();
+
+            foreach (NPNaturalSpiderPatrol patrol in FindObjectsByType<NPNaturalSpiderPatrol>(FindObjectsSortMode.None))
+            {
+                if (patrol.visualRoot != null && !spiderVisuals.Contains(patrol.visualRoot))
+                    spiderVisuals.Add(patrol.visualRoot);
+            }
+
             if (spiderTarget == null)
                 return;
 
             foreach (Transform child in spiderTarget)
             {
-                if (child != null &&
-                    (child.name == "Visual_WolfSpider" ||
-                     child.name == "Visual_WolfSpider (1)" ||
-                     child.name == "Visual_WolfSpider (2)" ||
-                     child.name == "Visual_WolfSpider (3)"))
-                {
+                if (child != null && child.name.StartsWith("Visual_WolfSpider") && !spiderVisuals.Contains(child))
                     spiderVisuals.Add(child);
-                }
             }
         }
 
@@ -270,65 +267,16 @@ namespace NeuroPhobia.Level45
             return null;
         }
 
+        // The full-screen panel saved in the scene (title, timer and a block of debug text in the middle of the
+        // view) is replaced by the shared wrist HUD (LevelHud).
         private void ConfigureLevelHud()
         {
             if (titleText == null)
                 return;
 
-            levelHudCanvas = titleText.canvas;
-            if (levelHudCanvas == null)
-                return;
-
-            CanvasScaler scaler =
-                levelHudCanvas.GetComponent<CanvasScaler>();
-            if (scaler != null)
-            {
-                scaler.uiScaleMode =
-                    CanvasScaler.ScaleMode.ScaleWithScreenSize;
-                scaler.referenceResolution =
-                    new Vector2(1920f, 1080f);
-                scaler.matchWidthOrHeight = 0.5f;
-            }
-
-            RectTransform canvasRect =
-                levelHudCanvas.transform as RectTransform;
-            if (canvasRect != null)
-            {
-                canvasRect.localScale = Vector3.one;
-                canvasRect.anchorMin = Vector2.zero;
-                canvasRect.anchorMax = Vector2.one;
-                canvasRect.anchoredPosition = Vector2.zero;
-                canvasRect.sizeDelta = Vector2.zero;
-            }
-
-            levelHudCanvas.pixelPerfect = true;
-            levelHudCanvas.sortingOrder = 500;
-
-            if (promptText != null)
-            {
-                promptText.enableAutoSizing = true;
-                promptText.fontSizeMin = 16f;
-                promptText.fontSizeMax = 24f;
-
-                RectTransform promptRect =
-                    promptText.rectTransform;
-                promptRect.anchorMin = new Vector2(0.5f, 0f);
-                promptRect.anchorMax = new Vector2(0.5f, 0f);
-                promptRect.anchoredPosition = new Vector2(0f, 35f);
-                promptRect.sizeDelta = new Vector2(900f, 230f);
-            }
-
-            if (XRSettings.isDeviceActive)
-            {
-                // En el visor, el HUD va en el mundo, lejos y siguiendo la vista con retardo (antes, pegado a 0,72 m).
-                NeuroPhobiaHudFollow.AttachFullScreen(levelHudCanvas);
-            }
-            else
-            {
-                levelHudCanvas.renderMode =
-                    RenderMode.ScreenSpaceOverlay;
-                levelHudCanvas.worldCamera = null;
-            }
+            levelHudCanvas = titleText.canvas != null ? titleText.canvas.rootCanvas : null;
+            if (levelHudCanvas != null)
+                levelHudCanvas.gameObject.SetActive(false);
         }
 
         private static float HorizontalDistance(
@@ -349,10 +297,6 @@ namespace NeuroPhobia.Level45
                 exposurePoints[currentPoint]
                     .gameObject.SetActive(false);
             }
-
-            // Volver a mover la araña al terminar el punto.
-            if (spiderPatrol != null)
-                spiderPatrol.ResumePatrol();
 
             PlayClip(checkpointClip);
 
@@ -442,45 +386,36 @@ namespace NeuroPhobia.Level45
                         : 0f;
             }
 
-            if (promptText == null)
-                return;
-
             string instruction;
 
             if (!pointArmed)
             {
-                instruction =
-                    "Acércate al orbe luminoso\n" +
-                    (float.IsInfinity(distance)
-                        ? string.Empty
-                        : "Distancia: " +
-                          distance.ToString("0.0") +
-                          " m");
+                instruction = float.IsInfinity(distance)
+                    ? "Acércate al orbe luminoso."
+                    : "Acércate al orbe luminoso (" + distance.ToString("0") + " m).";
             }
             else if (!lookingAtSpider)
             {
-                instruction =
-                    "Punto activado · La araña está detenida\n" +
-                    "Mira directamente a la araña";
+                instruction = "Punto activado. Mira directamente a una araña.";
             }
             else
             {
-                instruction =
-                    "Mantén la mirada · Puedes moverte fuera del orbe";
+                instruction = "Mantén la mirada. Puedes moverte.";
             }
 
-            int pausedCount = spiderPatrol != null
-                ? spiderPatrol.PausedAnimatorCount
-                : 0;
+            if (promptText != null)
+                promptText.text = instruction;
 
-            promptText.text = instruction + "\n" +
-                "Arañas detectadas: " + spiderVisuals.Count + "\n" +
-                "Arañas pausadas: " + pausedCount + "\n" +
-                "Araña mirada: " + lookedSpiderName + "\n" +
-                "Ángulo de mirada: " + lookAngle.ToString("0.0") +
-                "°\n" +
-                "Mirada: " + currentLookTime.ToString("0.0") +
-                " / " + secondsPerPoint.ToString("0") + " s";
+            float lookProgress = secondsPerPoint > 0f
+                ? Mathf.Clamp01(currentLookTime / secondsPerPoint)
+                : 0f;
+
+            LevelHud.SetMission(
+                "NIVEL 4 · EXPOSICIÓN CERCANA",
+                "Acércate a cada orbe y mira a una araña " + secondsPerPoint.ToString("0") + " s.\n" +
+                "Punto " + displayedPoint + " de " + Mathf.Max(total, 1) + "\n" + instruction,
+                total > 0 ? (currentPoint + lookProgress) / total : 0f);
+            LevelHud.SetGaze(lookProgress, pointArmed && (lookingAtSpider || currentLookTime > 0f));
         }
 
         private void BeginCompletion()
@@ -489,6 +424,7 @@ namespace NeuroPhobia.Level45
                 return;
 
             completing = true;
+            LevelHud.SetGaze(0f, false);
             GlobalSessionUI.CompleteLevel(4);
         }
 

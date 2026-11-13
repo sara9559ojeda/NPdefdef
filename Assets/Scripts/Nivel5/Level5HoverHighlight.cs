@@ -59,8 +59,43 @@ public sealed class Level5HoverHighlight : MonoBehaviour
         interactable.selectExited.RemoveListener(OnSelectExited);
     }
 
-    private void OnHoverEntered(HoverEnterEventArgs args) { hovers++; Refresh(); }
-    private void OnHoverExited(HoverExitEventArgs args) { hovers = Mathf.Max(0, hovers - 1); Refresh(); }
+    private const string PromptText = "Gatillo o grip";
+
+    private void OnHoverEntered(HoverEnterEventArgs args)
+    {
+        hovers++;
+        Refresh();
+        if (hovers != 1 || GameStateManager.CurrentState != GameState.PLAYING) return;
+        // Button badge on the piece and a short vibration on the hand that points at it.
+        InteractionPrompt.Show(this, PromptAnchor(), PromptText);
+        ControllerHaptics.Pulse(ControllerHaptics.HandOf(args.interactorObject.transform));
+    }
+
+    private void OnHoverExited(HoverExitEventArgs args)
+    {
+        hovers = Mathf.Max(0, hovers - 1);
+        Refresh();
+        if (hovers == 0) InteractionPrompt.Hide(this);
+    }
+
+    // Centre of the piece, pulled a little towards the head so the badge is not buried in it.
+    private Vector3 PromptAnchor()
+    {
+        Bounds bounds = new Bounds(transform.position, Vector3.zero);
+        bool any = false;
+        foreach (Renderer r in renderers)
+        {
+            if (r == null) continue;
+            if (!any) { bounds = r.bounds; any = true; }
+            else bounds.Encapsulate(r.bounds);
+        }
+
+        Camera head = NeuroPhobiaWorldPanel.GameplayCamera();
+        if (head == null) return bounds.center;
+        Vector3 toHead = head.transform.position - bounds.center;
+        float pull = Mathf.Min(toHead.magnitude * 0.5f, Mathf.Min(bounds.extents.x, bounds.extents.z) + 0.12f);
+        return bounds.center + toHead.normalized * pull;
+    }
     private void OnSelectEntered(SelectEnterEventArgs args) => Refresh();
     private void OnSelectExited(SelectExitEventArgs args) => Refresh();
 

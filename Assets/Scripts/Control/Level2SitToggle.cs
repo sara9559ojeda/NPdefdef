@@ -164,7 +164,7 @@ public sealed class Level2SitToggle : MonoBehaviour
         transitioning = true;
 
         seated = true;
-        Level1ThumbstickMove.MovementLocked = true;
+        PlayerLocomotion.MovementLocked = true;
     }
 
     private void StandUp()
@@ -174,6 +174,6 @@ public sealed class Level2SitToggle : MonoBehaviour
         targetOffset = standingOffset;
         transitioning = true;
         seated = false;
-        Level1ThumbstickMove.MovementLocked = false;
+        PlayerLocomotion.MovementLocked = false;
     }
 }

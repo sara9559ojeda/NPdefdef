@@ -5,7 +5,6 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
-using UnityEngine.XR;
 
 /// <summary>
 /// Controla la secuencia de cuatro ilustraciones del Nivel 1.
@@ -32,17 +31,7 @@ public sealed class Level1SequentialGazeFlow : MonoBehaviour
     [SerializeField] private string nextSceneName = "Nivel2";
     [SerializeField] private bool pauseGameplayDuringCompletion = true;
 
-    [Header("HUD en gafas")]
-    [Tooltip("Distancia (m) del HUD a la cámara cuando hay visor XR activo. Igual que Nivel4.")]
-    [SerializeField, Min(0.1f)] private float xrHudPlaneDistance = 0.72f;
-    [Tooltip("Escala del panel de progreso.")]
-    [SerializeField, Min(0.1f)] private float hudCornerScale = 0.7f;
-    [Tooltip("Posición del centro del panel como fracción del ancho y alto de la pantalla.")]
-    [SerializeField] private Vector2 hudAnchor = new Vector2(0.5f, 0.2f);
-
     private Canvas hudCanvas;
-    private RectTransform hudPanel;
-    private Vector2 hudPanelBasePosition;
     private int currentCardIndex;
     private float gazeTimer;
     private float lastValidLookTime = float.NegativeInfinity;
@@ -60,31 +49,11 @@ public sealed class Level1SequentialGazeFlow : MonoBehaviour
         FindPlayerCamera();
         PrepareCards();
 
+        // The floating progress panel saved in the scene is replaced by the shared wrist HUD (LevelHud).
         if (progressText != null && progressText.canvas != null)
         {
             hudCanvas = progressText.canvas.rootCanvas;
-            hudPanel = progressText.transform as RectTransform;
-            while (hudPanel != null && hudPanel.parent != hudCanvas.transform)
-            {
-                hudPanel = hudPanel.parent as RectTransform;
-            }
-
-            if (hudPanel != null)
-            {
-                // Centrado horizontalmente, en la parte baja para no tapar las imágenes de las arañas.
-                hudPanel.anchorMin = hudAnchor;
-                hudPanel.anchorMax = hudAnchor;
-                hudPanel.pivot = new Vector2(0.5f, 0.5f);
-                hudPanel.anchoredPosition = Vector2.zero;
-                hudPanel.localScale = Vector3.one * hudCornerScale;
-                hudPanelBasePosition = hudPanel.anchoredPosition;
-
-                // El HUD es solo informativo: no debe bloquear los botones del menú.
-                foreach (Graphic graphic in hudCanvas.GetComponentsInChildren<Graphic>(true))
-                {
-                    graphic.raycastTarget = false;
-                }
-            }
+            hudCanvas.gameObject.SetActive(false);
         }
 
         if (completionPanel != null)
@@ -142,61 +111,6 @@ public sealed class Level1SequentialGazeFlow : MonoBehaviour
         }
 
         UpdateProgressUI(isLooking);
-    }
-
-    private void LateUpdate()
-    {
-        AdaptHudCanvasToXR();
-    }
-
-    /// <summary>
-    /// Un Canvas ScreenSpaceOverlay se ve en la vista Game pero no en el visor XR.
-    /// Con visor activo se pasa a ScreenSpaceCamera sobre la cámara del jugador (mismo criterio que Nivel4);
-    /// se revisa cada frame porque XRBootstrap inicia XR de forma asíncrona.
-    /// </summary>
-    private void AdaptHudCanvasToXR()
-    {
-        if (hudCanvas == null)
-        {
-            return;
-        }
-
-        if (XRSettings.isDeviceActive)
-        {
-            if (playerCamera == null || !playerCamera.isActiveAndEnabled)
-            {
-                FindPlayerCamera();
-            }
-
-            if (playerCamera == null)
-            {
-                return;
-            }
-
-            // En el visor, el HUD va en el mundo, lejos (2,4 m) y siguiendo la vista con retardo.
-            if (hudCanvas.renderMode != RenderMode.WorldSpace)
-            {
-                NeuroPhobiaHudFollow.AttachFullScreen(hudCanvas);
-            }
-
-            SetHudAnchor(true);
-
-        }
-        else if (hudCanvas.renderMode != RenderMode.ScreenSpaceOverlay)
-        {
-            hudCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            hudCanvas.worldCamera = null;
-            SetHudAnchor(false);
-        }
-    }
-
-    private void SetHudAnchor(bool xr)
-    {
-        if (hudPanel == null) return;
-
-        hudPanel.anchorMin = hudAnchor;
-        hudPanel.anchorMax = hudAnchor;
-        hudPanel.anchoredPosition = hudPanelBasePosition;
     }
 
     private void PrepareCards()
@@ -274,6 +188,7 @@ public sealed class Level1SequentialGazeFlow : MonoBehaviour
             hudCanvas.gameObject.SetActive(false);
         }
 
+        LevelHud.SetGaze(0f, false);
         GlobalSessionUI.CompleteLevel(1);
     }
 
@@ -386,6 +301,8 @@ public sealed class Level1SequentialGazeFlow : MonoBehaviour
             progressFill.fillAmount = normalizedProgress;
         }
 
+        PublishToHud(totalCards, visibleNumber, normalizedProgress, isLooking);
+
         if (progressText == null)
         {
             return;
@@ -404,6 +321,25 @@ public sealed class Level1SequentialGazeFlow : MonoBehaviour
         progressText.text =
             $"Imagen {visibleNumber} de {totalCards}\n" +
             $"{instruction}: {gazeTimer:0.0} / {secondsPerCard:0} s";
+    }
+
+    // Mission and gaze progress on the shared HUD: the wrist panel shows which image is next, and the ring near
+    // the centre of the view fills while the look is being counted.
+    private void PublishToHud(int totalCards, int visibleNumber, float normalizedProgress, bool isLooking)
+    {
+        if (sequenceFinished)
+        {
+            return;
+        }
+
+        string mission = totalCards == 0
+            ? "No se encontraron las imágenes del nivel."
+            : $"Mira el centro de cada imagen durante {secondsPerCard:0} s.
+Imagen {visibleNumber} de {totalCards}";
+
+        float overall = totalCards == 0 ? 0f : (currentCardIndex + normalizedProgress) / totalCards;
+        LevelHud.SetMission("NIVEL 1 · OBSERVACIÓN", mission, overall);
+        LevelHud.SetGaze(normalizedProgress, isLooking || normalizedProgress > 0f);
     }
 
     private void OnDisable()

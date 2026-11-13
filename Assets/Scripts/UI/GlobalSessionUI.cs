@@ -362,9 +362,10 @@ public sealed class GlobalSessionUI : MonoBehaviour
         // La pausa se abre solo con el botón del mando.
         pauseButton.gameObject.SetActive(false);
 
-        pausePanel = Panel("CanvasPause", "Pausa", "Puedes continuar o finalizar la exposición.");
+        pausePanel = Panel("CanvasPause", "Pausa", "Puedes continuar o finalizar la exposición.
+Tu misión está en tu mano izquierda: levántala y mírala.");
         Button("Continuar", pausePanel.transform, "Continuar", new Vector2(0,75), new Vector2(480,68), Resume, UI.ButtonKind.Primary);
-        Button("Accesibilidad", pausePanel.transform, "Accesibilidad", new Vector2(0,-7), new Vector2(480,68), ShowAccessibility);
+        Button("Accesibilidad", pausePanel.transform, "Opciones y accesibilidad", new Vector2(0,-7), new Vector2(480,68), ShowAccessibility);
         Button("Menu", pausePanel.transform, "Volver al menú principal", new Vector2(0,-89), new Vector2(480,68), EndAndMenu);
         Button("Emergencia", pausePanel.transform, "Salida de emergencia", new Vector2(0,-171), new Vector2(480,68), ShowConfirm, UI.ButtonKind.Alert);
         pausePanel.SetActive(false);
@@ -427,31 +428,32 @@ public sealed class GlobalSessionUI : MonoBehaviour
         NeuroPhobiaAccessibility.Setting.TextSize,
         NeuroPhobiaAccessibility.Setting.PlayerSize,
         NeuroPhobiaAccessibility.Setting.MoveSpeed,
+        NeuroPhobiaAccessibility.Setting.TurnMode,
         NeuroPhobiaAccessibility.Setting.TurnAngle,
         NeuroPhobiaAccessibility.Setting.MenuDistance
     };
 
     private static readonly string[] AccessibilityNames =
     {
-        "Tamaño de la letra", "Tamaño del personaje", "Velocidad de movimiento", "Giro con el stick derecho", "Distancia del menú"
+        "Tamaño de la letra", "Tamaño del personaje", "Velocidad de movimiento", "Tipo de giro", "Ángulo del giro a saltos", "Distancia del menú"
     };
 
     private void BuildAccessibilityPanel()
     {
-        accessibilityPanel = Panel("CanvasAccesibilidad", "Accesibilidad", "Ajusta la experiencia a tu comodidad. Los cambios se guardan en este visor.");
+        accessibilityPanel = Panel("CanvasAccesibilidad", "Opciones y accesibilidad", "Ajusta la experiencia a tu comodidad. Los cambios se guardan en este visor.");
         accessibilityValues = new TMP_Text[AccessibilityRows.Length];
         for (int i = 0; i < AccessibilityRows.Length; i++)
         {
             NeuroPhobiaAccessibility.Setting setting = AccessibilityRows[i];
-            float y = 95f - i * 56f;
+            float y = 108f - i * 48f;
             TMP_Text name = Label("Ajuste" + i, accessibilityPanel.transform, AccessibilityNames[i], 22, new Vector2(-200, y), new Vector2(420, 52));
             name.alignment = TextAlignmentOptions.MidlineLeft;
-            Button("Menos" + i, accessibilityPanel.transform, "-", new Vector2(90, y), new Vector2(60, 52), () => ChangeAccessibility(setting, -1), UI.ButtonKind.Key);
+            Button("Menos" + i, accessibilityPanel.transform, "-", new Vector2(90, y), new Vector2(60, 44), () => ChangeAccessibility(setting, -1), UI.ButtonKind.Key);
             accessibilityValues[i] = Label("Valor" + i, accessibilityPanel.transform, "", 22, new Vector2(220, y), new Vector2(180, 52), UI.Face.TypeBold, UI.SageDeep);
-            Button("Mas" + i, accessibilityPanel.transform, "+", new Vector2(350, y), new Vector2(60, 52), () => ChangeAccessibility(setting, 1), UI.ButtonKind.Key);
+            Button("Mas" + i, accessibilityPanel.transform, "+", new Vector2(350, y), new Vector2(60, 44), () => ChangeAccessibility(setting, 1), UI.ButtonKind.Key);
         }
         Label("Nota", accessibilityPanel.transform, "El tamaño de la letra y del personaje se aplican al cargar el siguiente nivel.", 17,
-            new Vector2(0, -180), new Vector2(820, 46), UI.Face.Type, UI.InkSoft);
+            new Vector2(0, -184), new Vector2(820, 40), UI.Face.Type, UI.InkSoft);
         Button("Restablecer", accessibilityPanel.transform, "Restablecer", new Vector2(-210, -240), new Vector2(400, 64), ResetAccessibility);
         Button("Volver", accessibilityPanel.transform, "Volver", new Vector2(210, -240), new Vector2(400, 64), ShowPause, UI.ButtonKind.Primary);
         accessibilityPanel.SetActive(false);
@@ -480,7 +482,7 @@ public sealed class GlobalSessionUI : MonoBehaviour
         RefreshAccessibility();
     }
 
-    // Velocidad y giro se aplican al momento. Nivel 1, 2 y 5 ya los leen en cada fotograma (Level1ThumbstickMove);
+    // Velocidad y giro se aplican al momento. PlayerLocomotion ya los lee en cada fotograma;
     // en Nivel 3 y 4 se actualizan los proveedores de XRI, igual que hace NeuroPhobiaPlayerSettings al cargar el nivel.
     private static void ApplyMovementNow(float previousSpeedScale)
     {

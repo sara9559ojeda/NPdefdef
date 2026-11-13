@@ -31,8 +31,14 @@ public sealed class Level2SpawnAlign : MonoBehaviour
         new GameObject("NP_Level2_SpawnAlign").AddComponent<Level2SpawnAlign>();
     }
 
+    private void OnDestroy()
+    {
+        PlayerSpawnSequence.EndAlignment();
+    }
+
     private IEnumerator Start()
     {
+        PlayerSpawnSequence.BeginAlignment();
         float waited = 0f;
         XROrigin origin = null;
 

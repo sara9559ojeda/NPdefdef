@@ -28,8 +28,14 @@ public sealed class Level5SpawnAlign : MonoBehaviour
         new GameObject("NP_Level5_SpawnAlign").AddComponent<Level5SpawnAlign>();
     }
 
+    private void OnDestroy()
+    {
+        PlayerSpawnSequence.EndAlignment();
+    }
+
     private IEnumerator Start()
     {
+        PlayerSpawnSequence.BeginAlignment();
         float waited = 0f;
         XROrigin origin = null;
 

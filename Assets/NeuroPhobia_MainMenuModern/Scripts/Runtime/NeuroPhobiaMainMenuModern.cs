@@ -406,13 +406,14 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         NeuroPhobiaAccessibility.Setting.TextSize,
         NeuroPhobiaAccessibility.Setting.PlayerSize,
         NeuroPhobiaAccessibility.Setting.MoveSpeed,
+        NeuroPhobiaAccessibility.Setting.TurnMode,
         NeuroPhobiaAccessibility.Setting.TurnAngle,
         NeuroPhobiaAccessibility.Setting.MenuDistance
     };
 
     private static readonly string[] AccessibilityNames =
     {
-        "Tamaño de la letra", "Tamaño del personaje", "Velocidad de movimiento", "Giro con el stick derecho", "Distancia del menú"
+        "Tamaño de la letra", "Tamaño del personaje", "Velocidad de movimiento", "Tipo de giro", "Ángulo del giro a saltos", "Distancia del menú"
     };
 
     private void BuildAccessibilityPanel(Transform parent)
@@ -424,13 +425,13 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         for (int i = 0; i < AccessibilityRows.Length; i++)
         {
             NeuroPhobiaAccessibility.Setting setting = AccessibilityRows[i];
-            float y = 200f + i * 82f;
+            float y = 192f + i * 72f;
             TMP_Text name = UI.AddText(UI.Node(sheet, "Ajuste" + i), AccessibilityNames[i], UI.Face.Body, 25f, UI.Ink, TextAlignmentOptions.MidlineLeft);
-            UI.Place(name.gameObject, 60f, y, 430f, 66f);
-            PaperButton(sheet, "Menos" + i, "-", UI.ButtonKind.Key, 500f, y, 70f, 66f, () => ChangeAccessibility(setting, -1), 30f);
+            UI.Place(name.gameObject, 60f, y, 430f, 60f);
+            PaperButton(sheet, "Menos" + i, "-", UI.ButtonKind.Key, 500f, y, 70f, 60f, () => ChangeAccessibility(setting, -1), 30f);
             accessibilityValues[i] = UI.AddText(UI.Node(sheet, "Valor" + i), "", UI.Face.TypeBold, 25f, UI.SageDeep, TextAlignmentOptions.Center);
-            UI.Place(accessibilityValues[i].gameObject, 578f, y, 244f, 66f);
-            PaperButton(sheet, "Mas" + i, "+", UI.ButtonKind.Key, 830f, y, 70f, 66f, () => ChangeAccessibility(setting, 1), 30f);
+            UI.Place(accessibilityValues[i].gameObject, 578f, y, 244f, 60f);
+            PaperButton(sheet, "Mas" + i, "+", UI.ButtonKind.Key, 830f, y, 70f, 60f, () => ChangeAccessibility(setting, 1), 30f);
         }
 
         PaperButton(sheet, "Restablecer", "Restablecer", UI.ButtonKind.Secondary, 60f, 640f, 280f, 68f, ResetAccessibility);

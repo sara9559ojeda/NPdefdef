@@ -7,7 +7,7 @@ using UnityEngine.XR.Interaction.Toolkit.Locomotion.Turning;
 /// <summary>
 /// Aplica los ajustes de accesibilidad al personaje al cargar cada nivel: multiplica la escala del
 /// XR Origin por el tamaño elegido y ajusta velocidad y giro de los proveedores de locomoción de XRI
-/// (Nivel 3 y 4). Nivel 1, 2 y 5 leen los mismos ajustes en Level1ThumbstickMove. Se crea solo; no
+/// (sin uso desde PlayerLocomotion, que lee los mismos ajustes en cada fotograma). Se crea solo; no
 /// modifica las escenas en disco.
 /// </summary>
 public static class NeuroPhobiaPlayerSettings

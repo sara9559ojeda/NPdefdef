@@ -1,7 +1,5 @@
 using System.Collections;
-using TMPro;
 using UnityEngine;
-using UnityEngine.UI;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
 using UnityEngine.XR.Interaction.Toolkit.Interactors;
 
@@ -29,10 +27,7 @@ public class NPLevel3RealOrbs : MonoBehaviour
     private int count;
     private bool done;
     private Level3Settings settings;
-    private TMP_Text progressText;
-    private TMP_Text messageText;
-    private Image progressFill;
-    private Canvas hud;
+    private string hintMessage = "Camina hacia el orbe luminoso.";
 
     public int ReachedOrbs => count;
     public int TotalOrbs => orbs != null ? orbs.Length : 0;
@@ -54,7 +49,6 @@ public class NPLevel3RealOrbs : MonoBehaviour
             PrepareGrab(orbs[i]);
             orbs[i].SetActive(i == 0);
         }
-        BuildHUD();
         UpdateHUD();
     }
 
@@ -87,6 +81,13 @@ public class NPLevel3RealOrbs : MonoBehaviour
         XRSimpleInteractable interactable = orb.GetComponent<XRSimpleInteractable>();
         if (interactable == null) interactable = orb.AddComponent<XRSimpleInteractable>();
         interactable.selectEntered.AddListener(_ => TryGrab(orb));
+        // Button badge and a short vibration while a controller points at or touches the orb.
+        interactable.hoverEntered.AddListener(args =>
+        {
+            InteractionPrompt.Show(orb, orb.transform.position + Vector3.up * 0.45f, "Grip o gatillo");
+            ControllerHaptics.Pulse(ControllerHaptics.HandOf(args.interactorObject.transform));
+        });
+        interactable.hoverExited.AddListener(_ => InteractionPrompt.Hide(orb));
     }
 
     private void Update()
@@ -101,7 +102,14 @@ public class NPLevel3RealOrbs : MonoBehaviour
         if (TriggerPressedOn(target)) TryGrab(target);
         if (done || CurrentOrb != target) return;
 
-        if (messageText != null) messageText.text = Hint(head.transform, target.transform.position);
+        SetHint(Hint(head.transform, target.transform.position));
+    }
+
+    private void SetHint(string message)
+    {
+        if (hintMessage == message) return;
+        hintMessage = message;
+        UpdateHUD();
     }
 
     /// <summary>Agarra el orbe si es el que toca y la cabeza está lo bastante cerca. Devuelve true si cuenta.</summary>
@@ -142,6 +150,7 @@ public class NPLevel3RealOrbs : MonoBehaviour
 
     private void Reach(GameObject target)
     {
+        InteractionPrompt.Hide(target);
         target.SetActive(false);
         count++;
         if (collectClip != null) AudioSource.PlayClipAtPoint(collectClip, target.transform.position);
@@ -149,7 +158,7 @@ public class NPLevel3RealOrbs : MonoBehaviour
         if (count < orbs.Length)
         {
             if (orbs[count] != null) orbs[count].SetActive(true);
-            if (messageText != null) messageText.text = "Bien. Busca el siguiente orbe.";
+            hintMessage = "Bien. Busca el siguiente orbe.";
             UpdateHUD();
             return;
         }
@@ -158,89 +167,19 @@ public class NPLevel3RealOrbs : MonoBehaviour
         StartCoroutine(Finish());
     }
 
-    private void BuildHUD()
-    {
-        var root = new GameObject("NP_L3_HUD_Mision", typeof(RectTransform));
-        hud = root.AddComponent<Canvas>();
-        hud.sortingOrder = 500;
-        root.AddComponent<CanvasScaler>();
-
-        var panel = new GameObject("Panel", typeof(RectTransform), typeof(Image));
-        panel.transform.SetParent(root.transform, false);
-        var pr = panel.GetComponent<RectTransform>();
-        pr.anchorMin = Vector2.zero; pr.anchorMax = Vector2.one;
-        pr.offsetMin = Vector2.zero; pr.offsetMax = Vector2.zero;
-        Image background = panel.GetComponent<Image>();
-        background.color = new Color(.02f, .035f, .05f, .92f);
-        background.raycastTarget = false;
-
-        var title = MakeText(panel.transform, "NIVEL 3 · APROXIMACIÓN PROGRESIVA", 30, FontStyles.Bold);
-        SetRect(title.rectTransform, .04f, .80f, .96f, .97f);
-        var mission = MakeText(panel.transform, MissionText, 22, FontStyles.Normal);
-        SetRect(mission.rectTransform, .04f, .56f, .96f, .80f);
-        progressText = MakeText(panel.transform, "", 26, FontStyles.Bold);
-        SetRect(progressText.rectTransform, .04f, .40f, .96f, .56f);
-        messageText = MakeText(panel.transform, "Camina hacia el orbe luminoso.", 22, FontStyles.Normal);
-        SetRect(messageText.rectTransform, .04f, .24f, .96f, .40f);
-
-        progressFill = Bar(panel.transform, "Barra", .07f, .09f, .93f, .17f, new Color(.1f, .8f, .72f, 1));
-
-        NeuroPhobiaHudFollow.Attach(hud, new Vector2(760f, 330f), new Vector2(-0.55f, -0.45f), 0.8f);
-    }
-
-    private static Image Bar(Transform parent, string name, float x1, float y1, float x2, float y2, Color color)
-    {
-        var bg = new GameObject(name + "Fondo", typeof(RectTransform), typeof(Image));
-        bg.transform.SetParent(parent, false);
-        SetRect(bg.GetComponent<RectTransform>(), x1, y1, x2, y2);
-        bg.GetComponent<Image>().color = new Color(.15f, .19f, .23f, 1);
-        bg.GetComponent<Image>().raycastTarget = false;
-        var fill = new GameObject(name, typeof(RectTransform), typeof(Image));
-        fill.transform.SetParent(bg.transform, false);
-        var fr = fill.GetComponent<RectTransform>();
-        fr.anchorMin = Vector2.zero; fr.anchorMax = Vector2.one;
-        fr.offsetMin = Vector2.zero; fr.offsetMax = Vector2.zero;
-        Image image = fill.GetComponent<Image>();
-        image.color = color;
-        image.raycastTarget = false;
-        // Sin sprite, Image.Type.Filled no recorta: se usa la escala horizontal.
-        image.sprite = Sprite.Create(Texture2D.whiteTexture, new Rect(0, 0, 4, 4), new Vector2(.5f, .5f));
-        image.type = Image.Type.Filled;
-        image.fillMethod = Image.FillMethod.Horizontal;
-        image.fillAmount = 0f;
-        return image;
-    }
-
-    private static TMP_Text MakeText(Transform parent, string value, float size, FontStyles style)
-    {
-        var go = new GameObject("Texto", typeof(RectTransform));
-        go.transform.SetParent(parent, false);
-        var t = go.AddComponent<TextMeshProUGUI>();
-        t.text = value; t.fontSize = size; t.fontStyle = style;
-        t.alignment = TextAlignmentOptions.Center; t.color = Color.white;
-        t.textWrappingMode = TextWrappingModes.Normal;
-        t.raycastTarget = false;
-        return t;
-    }
-
-    private static void SetRect(RectTransform r, float x1, float y1, float x2, float y2)
-    {
-        r.anchorMin = new Vector2(x1, y1);
-        r.anchorMax = new Vector2(x2, y2);
-        r.offsetMin = Vector2.zero; r.offsetMax = Vector2.zero;
-    }
-
+    // Mission, progress and the current hint on the shared wrist HUD (LevelHud).
     private void UpdateHUD()
     {
         int total = TotalOrbs;
-        if (progressText) progressText.text = "Orbes agarrados: " + count + " / " + total;
-        if (progressFill) progressFill.fillAmount = total > 0 ? count / (float)total : 0f;
+        string body = MissionText + "\nOrbes agarrados: " + count + " / " + total + "\n" + hintMessage;
+        LevelHud.SetMission("NIVEL 3 · APROXIMACIÓN", body, total > 0 ? count / (float)total : 0f);
     }
 
     private IEnumerator Finish()
     {
         done = true;
-        if (messageText) messageText.text = "Misión cumplida.";
+        hintMessage = "Misión cumplida.";
+        UpdateHUD();
         GlobalSessionUI.CompleteLevel(3);
         yield break;
     }
