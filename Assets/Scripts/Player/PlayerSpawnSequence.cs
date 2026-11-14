@@ -41,6 +41,7 @@ public sealed class PlayerSpawnSequence : MonoBehaviour
     private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
         pendingAlignments = 0;
+        Opened = false;
         int level = LevelScenes.Number(scene.name);
         if (level == 0) return;
         PlayerSpawnSequence sequence = new GameObject("NP_PlayerSpawnSequence").AddComponent<PlayerSpawnSequence>();
@@ -81,10 +82,56 @@ public sealed class PlayerSpawnSequence : MonoBehaviour
             }
 
             MoveOutOfScenery(origin);
+            // The view opens with the feet on the floor: the session panel pauses the game (no gravity) right
+            // after, so a rig left in the air would hang there and drop when the panel closes.
+            SnapToFloor(origin);
         }
 
+        Opened = false;
         yield return ScreenFader.OpenEyes();
+        Opened = true;
         Destroy(gameObject);
+    }
+
+    /// <summary>True once the level start has finished (the view is open and the rig is in place).</summary>
+    public static bool Opened { get; private set; }
+
+    private const float FloorMinBelowEye = 0.9f;
+    private const float FloorMinSize = 2.5f;
+    private const float FloorSearchDepth = 12f;
+
+    /// <summary>
+    /// Puts the rig's feet on the floor under the head. The floor is the highest walkable surface at least
+    /// <see cref="FloorMinBelowEye"/> (perceived metres) below the eyes, preferring large surfaces so a table or a
+    /// sofa under the spawn point is not taken for the floor.
+    /// </summary>
+    public static void SnapToFloor(XROrigin origin)
+    {
+        Camera head = origin != null ? origin.Camera : null;
+        if (head == null) return;
+        float scale = Mathf.Max(0.01f, origin.transform.lossyScale.x);
+        Vector3 eye = head.transform.position;
+
+        float best = float.MinValue, bestLarge = float.MinValue;
+        foreach (RaycastHit hit in Physics.RaycastAll(eye, Vector3.down, FloorSearchDepth * scale, ~0, QueryTriggerInteraction.Ignore))
+        {
+            if (hit.collider.transform.IsChildOf(origin.transform)) continue;
+            if (hit.normal.y < 0.7f || hit.distance < FloorMinBelowEye * scale) continue;
+            if (hit.point.y > best) best = hit.point.y;
+            Vector3 size = hit.collider.bounds.size;
+            if (size.x >= FloorMinSize * scale && size.z >= FloorMinSize * scale && hit.point.y > bestLarge) bestLarge = hit.point.y;
+        }
+        float floorY = bestLarge > float.MinValue ? bestLarge : best;
+        if (floorY == float.MinValue) return;
+
+        CharacterController controller = origin.GetComponent<CharacterController>();
+        bool wasEnabled = controller != null && controller.enabled;
+        if (controller != null) controller.enabled = false;
+        Vector3 position = origin.transform.position;
+        position.y = floorY;
+        origin.transform.position = position;
+        if (controller != null) controller.enabled = wasEnabled;
+        Debug.Log("NeuroPhobia: feet on the floor at y=" + floorY.ToString("0.00") + " in " + SceneManager.GetActiveScene().name);
     }
 
     // Floor tracking with the head over the spot the scene intends, and the rig standing on the floor below it.
@@ -120,7 +167,7 @@ public sealed class PlayerSpawnSequence : MonoBehaviour
             offset.localPosition = local;
         }
 
-        origin.MoveCameraToWorldLocation(new Vector3(intendedHead.x, head.transform.position.y, intendedHead.z));
+        RigPlacement.MoveCameraTo(origin, new Vector3(intendedHead.x, head.transform.position.y, intendedHead.z));
 
         if (TryFindFloor(origin, new Vector3(intendedHead.x, rigStart.y, intendedHead.z), out float floorY))
         {

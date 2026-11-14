@@ -88,7 +88,7 @@ public sealed class Level5SpawnAlign : MonoBehaviour
             offset.localPosition = local;
         }
 
-        origin.MoveCameraToWorldLocation(new Vector3(spawn.x, cam.transform.position.y, spawn.z));
+        RigPlacement.MoveCameraTo(origin, new Vector3(spawn.x, cam.transform.position.y, spawn.z));
 
         // Piso bajo el jugador: el más alto que esté cerca de la altura inicial, sin contar al propio rig.
         RaycastHit[] hits = Physics.RaycastAll(

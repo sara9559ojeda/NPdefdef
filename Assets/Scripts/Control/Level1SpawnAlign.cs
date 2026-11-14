@@ -91,7 +91,7 @@ public sealed class Level1SpawnAlign : MonoBehaviour
 
         float currentYaw = Mathf.Atan2(forward.x, forward.z) * Mathf.Rad2Deg;
         origin.RotateAroundCameraUsingOriginUp(Mathf.DeltaAngle(currentYaw, FacingYaw));
-        origin.MoveCameraToWorldLocation(new Vector3(HeadSpawn.x, cam.transform.position.y, HeadSpawn.z));
+        RigPlacement.MoveCameraTo(origin, new Vector3(HeadSpawn.x, cam.transform.position.y, HeadSpawn.z));
 
         if (controller != null) controller.enabled = true;
 
