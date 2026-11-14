@@ -1,23 +1,19 @@
 using UnityEngine;
 
+/// <summary>
+/// Segunda esfera de respiración del Nivel 1. Antes respiraba a su propio ritmo (vaivén de 19 s, sin colores) y no
+/// coincidía con la esfera 4-7-8, lo que confundía. Ahora se convierte en una <see cref="BreathingSphereGuide"/> y
+/// todas las esferas del nivel arrancan juntas: inhalan, mantienen y exhalan a la vez, con la misma etiqueta.
+/// </summary>
 public class BreathingGuide : MonoBehaviour
 {
-    [SerializeField] private float cycleSeconds = 19f;
-    [SerializeField] private float minScale = 0.22f;
-    [SerializeField] private float maxScale = 0.45f;
-
-    private Vector3 baseScale;
-
     private void Start()
     {
         // Solo anima la esfera; no registra breathingActivations (antes sumaba una por instancia en Start).
-        baseScale = Vector3.one;
-    }
+        if (GetComponent<BreathingSphereGuide>() == null) gameObject.AddComponent<BreathingSphereGuide>();
+        enabled = false;
 
-    private void Update()
-    {
-        float t = Mathf.PingPong(Time.time / cycleSeconds, 1f);
-        float scale = Mathf.Lerp(minScale, maxScale, t);
-        transform.localScale = baseScale * scale;
+        foreach (BreathingSphereGuide guide in FindObjectsByType<BreathingSphereGuide>(FindObjectsSortMode.None))
+            guide.StartBreathing();
     }
 }

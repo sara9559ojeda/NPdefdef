@@ -49,6 +49,11 @@ public sealed class Level1SequentialGazeFlow : MonoBehaviour
         FindPlayerCamera();
         PrepareCards();
 
+        // The old wall sign (5 m wide, 5 m up, blurry legacy font, plus an unused "Continue" button) is replaced by
+        // the small label under each breathing sphere (BreathingSphereGuide) and the mission on the wrist panel.
+        GameObject oldSign = GameObject.Find("CanvasPsicoeducacion_WorldSpace");
+        if (oldSign != null) oldSign.SetActive(false);
+
         // The floating progress panel saved in the scene is replaced by the shared wrist HUD (LevelHud).
         if (progressText != null && progressText.canvas != null)
         {
@@ -334,8 +339,9 @@ public sealed class Level1SequentialGazeFlow : MonoBehaviour
 
         string mission = totalCards == 0
             ? "No se encontraron las imágenes del nivel."
-            : $"Mira el centro de cada imagen durante {secondsPerCard:0} s.
-Imagen {visibleNumber} de {totalCards}";
+            : $"Mira el centro de cada imagen {secondsPerCard:0} s y respira al ritmo de la esfera.\n" +
+              "Esfera: crece = inhala · amarilla = mantén · se encoge = exhala.\n" +
+              $"Imagen {visibleNumber} de {totalCards}";
 
         float overall = totalCards == 0 ? 0f : (currentCardIndex + normalizedProgress) / totalCards;
         LevelHud.SetMission("NIVEL 1 · OBSERVACIÓN", mission, overall);
