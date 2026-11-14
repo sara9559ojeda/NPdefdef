@@ -62,21 +62,21 @@ public sealed class Level5SpiderSettings : ScriptableObject
     public bool doorOpensOnApproach = false;
 
     /// <summary>
-    /// Número de arañas de Nivel5 según el grado de fobia de la sesión: grado N -> N arañas (1-5).
-    /// Un grado ausente o fuera de rango usa 1 araña (regla de ESTADO_FINAL_ENTREGA.md).
+    /// Número de arañas según el grado de fobia de la sesión. El grado es el miedo que la persona dice sentir: más miedo,
+    /// menos arañas (exposición gradual; decisión de Sara, 2026-11-13): grado N -> 6 - N arañas (grado 1 -> 5,
+    /// grado 5 -> 1). Un grado ausente o fuera de rango usa la exposición mínima (1 araña).
     /// </summary>
     public static int SpiderCountForGrade(int phobiaGrade)
     {
-        return phobiaGrade >= 1 && phobiaGrade <= 5 ? phobiaGrade : 1;
+        return phobiaGrade >= 1 && phobiaGrade <= 5 ? 6 - phobiaGrade : 1;
     }
 
     /// <summary>Habitaciones del apartamento del Nivel5 (sala, cocina, cuarto y baño).</summary>
     public const int Level5Rooms = 4;
 
     /// <summary>
-    /// Arañas del Nivel5: al menos una por habitación, y más si el grado de fobia lo pide (grado N -> N si N > 4).
-    /// Así toda la casa tiene arañas con cualquier grado (decisión de Sara, 2026-11-13). El Nivel3 sigue usando
-    /// <see cref="SpiderCountForGrade"/>.
+    /// Arañas del Nivel5: al menos una por habitación, y más si el grado de fobia lo pide (grado 1 -> 5; del 2 al 5 -> 4).
+    /// Así toda la casa tiene arañas con cualquier grado (decisión de Sara, 2026-11-13).
     /// </summary>
     public static int Level5SpiderCount(int phobiaGrade)
     {

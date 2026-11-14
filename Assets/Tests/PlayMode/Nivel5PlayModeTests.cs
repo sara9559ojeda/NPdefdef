@@ -241,8 +241,8 @@ namespace NeuroPhobia.Tests
             object manager = Find("Level5CompanionSpiders");
             float minSpawn = (float)Get(Get(manager, "Settings"), "minSpawnDistanceFromPlayer");
             Transform[] spiders = LiveSpiders();
-            // Al menos una por habitación (4); más si el grado lo pide.
-            int expected = Mathf.Max(4, TestPhobiaGrade);
+            // Al menos una por habitación (4); más con los grados bajos (menos miedo).
+            int expected = Mathf.Max(4, 6 - TestPhobiaGrade);   // más miedo, menos arañas; mínimo una por habitación
             Assert.AreEqual(expected, (int)Get(manager, "RequestedCount"), "Grado " + TestPhobiaGrade + " debe pedir " + expected + " arañas.");
             Assert.AreEqual(expected, spiders.Length, "La cantidad de arañas no coincide con la regla del nivel.");
 

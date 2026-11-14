@@ -16,11 +16,11 @@ MonoBehaviour:
   gazeSeconds: 3
   gazeAngle: 14
   spidersByGrade:
-  - 4
-  - 6
-  - 8
-  - 10
   - 12
+  - 10
+  - 8
+  - 6
+  - 4
   nearOrbsFraction: 0.5
   minDistanceFromPlayer: 4
   minDistanceFromOrb: 2.2
