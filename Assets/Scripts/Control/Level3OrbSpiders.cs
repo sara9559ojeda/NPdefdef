@@ -143,7 +143,7 @@ public sealed class Level3OrbSpiders : MonoBehaviour
             // Start() aún no corrió: se sueltan los puntos del original para que el clon cree su propia ruta.
             patrol.pointA = null;
             patrol.pointB = null;
-            patrol.moveSpeed = settings.moveSpeed * Random.Range(0.85f, 1.15f);
+            patrol.SetBaseMoveSpeed(settings.moveSpeed * Random.Range(0.85f, 1.15f));
             patrol.turnRate = settings.turnRate;
             ConfigureWander(patrol, settings, orbs, settings.routeRadius * Random.Range(0.8f, 1.2f));
         }

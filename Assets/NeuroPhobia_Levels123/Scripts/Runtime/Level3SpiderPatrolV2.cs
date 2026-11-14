@@ -36,7 +36,7 @@ public class Level3SpiderPatrolV2 : MonoBehaviour
     public Animator animator;
     public float animatorSpeed = 0.28f;
     [Tooltip("Animator speed while the spider stands still: the legs keep shifting very slowly instead of freezing.")]
-    public float idleAnimatorSpeed = 0.05f;
+    public float idleAnimatorSpeed = 0.12f;
     public Transform visualRoot;
     public float endpointPauseMin = 0.8f;
     public float endpointPauseMax = 1.8f;
@@ -86,8 +86,25 @@ public class Level3SpiderPatrolV2 : MonoBehaviour
         GameStateManager.OnStateChanged -= HandleState;
     }
 
+    /// <summary>All spiders walk 50 % faster (request of 2026-11-13); the legs speed up with them.</summary>
+    public const float SpeedBoost = 1.5f;
+    // Serialized so a clone of a spider that already started does not get the boost twice.
+    [SerializeField, HideInInspector] private bool speedBoosted;
+
+    /// <summary>Sets the walking speed before the boost (the boost is applied now or in Start, never twice).</summary>
+    public void SetBaseMoveSpeed(float baseSpeed)
+    {
+        moveSpeed = baseSpeed * (speedBoosted ? SpeedBoost : 1f);
+    }
+
     private void Start()
     {
+        if (!speedBoosted)
+        {
+            speedBoosted = true;
+            moveSpeed *= SpeedBoost;
+            animatorSpeed *= SpeedBoost;
+        }
         initialSpawn = transform.position;
         initialRotation = transform.rotation;
         stableGroundY = initialSpawn.y;
@@ -124,15 +141,53 @@ public class Level3SpiderPatrolV2 : MonoBehaviour
             return;
         }
 
-        // Sin destino válido ahora (p. ej. el jugador está en medio): vuelve a su sitio si puede, o lo intenta luego.
+        // Sin destino válido ahora (p. ej. el jugador está en medio): vuelve a su sitio si puede.
         if (Flat(initialSpawn - transform.position).magnitude > 0.3f && PathIsClear(transform.position, initialSpawn))
         {
             destination = initialSpawn;
             hasDestination = true;
             return;
         }
+
+        // Si tampoco puede volver (el jugador está junto a su zona, como la araña que aparece delante del jugador al
+        // empezar), se aleja del jugador y se instala en una zona libre: antes se quedaba parada indefinidamente.
+        if (player.HasValue && TryMoveZoneAwayFrom(player.Value))
+        {
+            return;
+        }
+
         hasDestination = false;
         nextPickTime = Time.time + 1f;
+    }
+
+    private const float EscapeMinDistance = 2.5f;
+    private const float EscapeMaxDistance = 5f;
+
+    // Busca un punto libre lejos del jugador (abanico de direcciones que se alejan de él), lo toma como destino y
+    // mueve allí el centro de su zona de paseo.
+    private bool TryMoveZoneAwayFrom(Vector3 player)
+    {
+        Vector3 away = Flat(transform.position - player);
+        if (away.sqrMagnitude < 0.0001f) away = transform.forward;
+        away.Normalize();
+
+        float[] fan = { 0f, 35f, -35f, 70f, -70f, 100f, -100f };
+        foreach (float distance in new[] { EscapeMinDistance, (EscapeMinDistance + EscapeMaxDistance) * 0.5f, EscapeMaxDistance })
+        {
+            foreach (float angle in fan)
+            {
+                Vector3 candidate = player + Quaternion.Euler(0f, angle, 0f) * away * distance;
+                candidate.y = transform.position.y;
+                if (!IsFreeDestination(candidate, player, out Vector3 grounded)) continue;
+                if (!PathIsClear(transform.position, grounded)) continue;
+                destination = grounded;
+                hasDestination = true;
+                initialSpawn = grounded;
+                maxRouteDistanceFromSpawn = Mathf.Max(maxRouteDistanceFromSpawn, Flat(grounded - transform.position).magnitude + 1.5f);
+                return true;
+            }
+        }
+        return false;
     }
 
     private bool IsFreeDestination(Vector3 candidate, Vector3? player, out Vector3 grounded)

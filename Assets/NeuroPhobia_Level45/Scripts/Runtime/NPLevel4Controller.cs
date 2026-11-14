@@ -165,6 +165,10 @@ namespace NeuroPhobia.Level45
             lostLookTime = 0f;
             bestAttempt = 0f;
 
+            // Exposure: the spiders closest to this orb stop roaming and walk slowly towards it.
+            if (exposurePoints != null && currentPoint < exposurePoints.Length && exposurePoints[currentPoint] != null)
+                Level4SpiderApproach.Begin(exposurePoints[currentPoint].position, currentPoint);
+
             PlayClip(checkpointClip);
         }
 
@@ -290,6 +294,7 @@ namespace NeuroPhobia.Level45
 
         private void CompleteCurrentPoint()
         {
+            Level4SpiderApproach.End();
             if (exposurePoints != null &&
                 currentPoint < exposurePoints.Length &&
                 exposurePoints[currentPoint] != null)
@@ -396,7 +401,7 @@ namespace NeuroPhobia.Level45
             }
             else if (!lookingAtSpider)
             {
-                instruction = "Punto activado. Mira directamente a una araña.";
+                instruction = "Punto activado: las arañas se acercan despacio y se detienen a distancia segura. Mira a una de ellas.";
             }
             else
             {
@@ -420,6 +425,7 @@ namespace NeuroPhobia.Level45
 
         private void BeginCompletion()
         {
+            Level4SpiderApproach.End();
             if (completing)
                 return;
 

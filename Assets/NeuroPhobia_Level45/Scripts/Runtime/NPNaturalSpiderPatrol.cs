@@ -29,7 +29,7 @@ namespace NeuroPhobia.Level45
         public Transform visualRoot;
         public float animationSpeed = 0.35f;
         [Tooltip("Animator speed while the spider stands still: the legs keep shifting very slowly instead of freezing.")]
-        public float idleAnimationSpeed = 0.05f;
+        public float idleAnimationSpeed = 0.12f;
         public bool useProceduralMotionWhenNoClip = true;
         [Tooltip("Giro (grados, eje Y) que se aplica una sola vez al objeto visual para que la cabeza del modelo mire hacia el avance. " +
                  "Wolf Spider Rigged trae la cabeza hacia -Z local, por eso 180.")]
@@ -79,8 +79,19 @@ namespace NeuroPhobia.Level45
             PrepareObject();
         }
 
+        /// <summary>All spiders walk 50 % faster (request of 2026-11-13); the legs speed up with them.</summary>
+        public const float SpeedBoost = 1.5f;
+        // Serialized so a clone of a spider that already started does not get the boost twice.
+        [SerializeField, HideInInspector] private bool speedBoosted;
+
         private void Start()
         {
+            if (!speedBoosted)
+            {
+                speedBoosted = true;
+                moveSpeed *= SpeedBoost;
+                animationSpeed *= SpeedBoost;
+            }
             safePosition = transform.position;
             stableGroundY = transform.position.y;
             wanderSeed = Random.value * 100f;

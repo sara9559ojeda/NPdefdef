@@ -31,10 +31,20 @@ public sealed class PlayerLocomotion : MonoBehaviour
     /// <summary>Set while the player is seated (Level2SitToggle): the stick does not move the rig.</summary>
     public static bool MovementLocked;
 
+    // Running exists only in Nivel3 (its basement is very large): clicking the left stick doubles the speed until
+    // the stick is released.
+    private const string RunLevel = "Nivel3";
+    public const float RunSpeedMultiplier = 2f;
+
+    /// <summary>True while the player is running (Nivel3 only).</summary>
+    public static bool Running { get; private set; }
+
     private XROrigin origin;
     private CharacterController controller;
     private InputAction moveAction;
     private InputAction turnAction;
+    private InputAction runAction;
+    private bool canRun;
     private bool snapArmed = true;
     private float verticalVelocity;
 
@@ -49,6 +59,7 @@ public sealed class PlayerLocomotion : MonoBehaviour
     private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
         MovementLocked = false;
+        Running = false;
         if (!LevelScenes.IsLevel(scene.name)) return;
         new GameObject("NP_PlayerLocomotion").AddComponent<PlayerLocomotion>();
     }
@@ -64,12 +75,24 @@ public sealed class PlayerLocomotion : MonoBehaviour
         turnAction.AddBinding("<XRController>{RightHand}/thumbstick");
         turnAction.AddBinding("<Gamepad>/rightStick");
         turnAction.Enable();
+
+        canRun = SceneManager.GetActiveScene().name == RunLevel;
+        if (canRun)
+        {
+            runAction = new InputAction("NP_Player_Run", InputActionType.Button);
+            runAction.AddBinding("<XRController>{LeftHand}/thumbstickClicked");
+            runAction.AddBinding("<Gamepad>/leftStickPress");
+            runAction.AddBinding("<Keyboard>/leftShift");
+            runAction.Enable();
+        }
     }
 
     private void OnDisable()
     {
         DisposeAction(ref moveAction);
         DisposeAction(ref turnAction);
+        DisposeAction(ref runAction);
+        Running = false;
     }
 
     private static void DisposeAction(ref InputAction action)
@@ -119,13 +142,19 @@ public sealed class PlayerLocomotion : MonoBehaviour
         Vector2 input = moveAction.ReadValue<Vector2>();
         if (input.magnitude < MoveDeadzone) input = Vector2.zero;
 
+        if (canRun && runAction != null)
+        {
+            if (runAction.WasPressedThisFrame() && input != Vector2.zero) Running = true;
+            if (input == Vector2.zero) Running = false;   // releasing the stick stops running
+        }
+
         Transform head = origin.Camera.transform;
         Vector3 forward = Vector3.ProjectOnPlane(head.forward, Vector3.up);
         if (forward.sqrMagnitude < 0.01f) forward = Vector3.ProjectOnPlane(head.up, Vector3.up);
         forward.Normalize();
         Vector3 right = Vector3.Cross(Vector3.up, forward);
 
-        float speed = PerceivedMoveSpeed * RigScale * NeuroPhobiaAccessibility.MoveSpeedScale;
+        float speed = PerceivedMoveSpeed * RigScale * NeuroPhobiaAccessibility.MoveSpeedScale * (Running ? RunSpeedMultiplier : 1f);
         Vector3 horizontal = (forward * input.y + right * input.x) * speed;
 
         verticalVelocity = controller.isGrounded ? -1f : verticalVelocity + GravityAcceleration * RigScale * Time.deltaTime;
