@@ -28,6 +28,25 @@ public sealed class GlobalSessionUI : MonoBehaviour
     private TMP_Text repeatText;
     private TMP_Text resultText;
     private TMP_Text summaryText;
+    // Ventana de fin de sesión: el registro y, con «Ver resumen», lo que dijo la IA.
+    private const string AiDisclaimer = "Resumen generado por IA. No es una recomendación de ningún profesional y no ha sido validado.";
+    private const string AiPreparing = "La IA está preparando tu resumen";
+    private const float AiFadeSeconds = 0.35f;
+    private const float AiSlidePixels = 24f;
+    private const float AiCharactersPerSecond = 90f;
+    private const float AiPollSeconds = 4f;
+    private const float AiWaitTimeoutSeconds = 90f;
+    private TMP_Text summaryDescription;
+    private TMP_Text aiSummaryText;
+    private TMP_Text summaryToggleLabel;
+    private CanvasGroup summaryRecordView;
+    private CanvasGroup summaryAiView;
+    private bool aiViewShown;
+    private string aiShownText;
+    private float aiOpenedAt;
+    private float aiNextPoll;
+    private Coroutine aiTransition;
+    private Coroutine aiTypewriter;
     private TMP_Text syncText;
     private FastAPIClient apiClient;
     private Button nextButton;
@@ -78,10 +97,23 @@ public sealed class GlobalSessionUI : MonoBehaviour
         AskSudsBefore();
     }
 
+    // Máximo de espera a que termine la aparición del jugador antes de preguntar el SUDS inicial.
+    private const float SudsAfterSpawnMaxWait = 8f;
+
     private void AskSudsBefore()
     {
         if (sudsBeforeAsked || SessionManager.Instance == null || SessionManager.Instance.GetReport() == null) return;
         sudsBeforeAsked = true;
+        StartCoroutine(AskSudsWhenViewOpens());
+    }
+
+    // El panel se abre cuando la vista ya está abierta y el jugador colocado: si se colocaba antes, el rig se movía y
+    // giraba después y el panel quedaba a un lado o dentro de una pared.
+    private System.Collections.IEnumerator AskSudsWhenViewOpens()
+    {
+        float start = Time.realtimeSinceStartup;
+        while (!PlayerSpawnSequence.Opened && Time.realtimeSinceStartup - start < SudsAfterSpawnMaxWait) yield return null;
+        if (completed) yield break;
         ShowSuds("Antes de empezar", value =>
         {
             if (value >= 0) SessionManager.Instance.RecordSudsBefore(level, value);
@@ -125,6 +157,7 @@ public sealed class GlobalSessionUI : MonoBehaviour
     private void Update()
     {
         KeepCameraBinding();
+        if (aiViewShown && summaryPanel != null && summaryPanel.activeSelf) RefreshAiSummary();
         if (syncText != null && summaryPanel != null && summaryPanel.activeSelf)
         {
             if (apiClient == null) apiClient = FindFirstObjectByType<FastAPIClient>();
@@ -333,17 +366,27 @@ public sealed class GlobalSessionUI : MonoBehaviour
         Vector3 toPanel = offset; toPanel.y = 0f;
         Vector3 look = head.transform.forward; look.y = 0f;
         bool turned = toPanel.sqrMagnitude > 0.0001f && look.sqrMagnitude > 0.0001f && Vector3.Angle(toPanel, look) > RefollowAngle;
-        bool displaced = toPanel.magnitude > NeuroPhobiaWorldPanel.PanelDistance + 0.4f || Mathf.Abs(offset.y) > 0.45f;
+        float rigScale = NeuroPhobiaWorldPanel.RigScale(head.transform);
+        bool displaced = toPanel.magnitude > (MenuDistance + 0.4f) * rigScale || Mathf.Abs(offset.y) > 0.45f * rigScale;
         if (turned || displaced) PlaceInFront(head.transform);
     }
 
-    /// <summary>Coloca el lienzo delante de la cabeza, a la altura de los ojos y sin atravesar paredes.</summary>
+    // Distancia del menú en metros percibidos: la misma opción «Distancia del menú» que el menú principal.
+    private static float MenuDistance => NeuroPhobiaAccessibility.MenuDistance;
+
+    /// <summary>
+    /// Coloca el lienzo delante de la cabeza, a la altura de los ojos y sin atravesar paredes, a la misma distancia y
+    /// con el mismo tamaño aparentes en los cinco niveles (cada nivel tiene su propia escala de rig).
+    /// </summary>
     public void PlaceInFront(Transform head)
     {
-        float distance = NeuroPhobiaWorldPanel.PlaceInFront(transform, head, NeuroPhobiaWorldPanel.PanelDistance, Vector3.zero);
-        // Si una pared obliga a acercarlo, se reduce para conservar el mismo tamaño aparente.
+        float rigScale = NeuroPhobiaWorldPanel.RigScale(head);
+        float distance = NeuroPhobiaWorldPanel.PlaceInFront(transform, head, MenuDistance, Vector3.zero, rigScale);
+        // El tamaño acompaña a la distancia: 1,25 m de ancho a 1,7 m, y si una pared obliga a acercarlo se reduce
+        // para conservar el mismo tamaño aparente.
         placedScale = distance / NeuroPhobiaWorldPanel.PanelDistance;
         transform.localScale = Vector3.one * (PanelWidthMeters / CanvasSize.x) * placedScale;
+        NeuroPhobiaWorldPanel.DrawOnTop(transform);
     }
 
     private void BuildCanvas()
@@ -362,8 +405,7 @@ public sealed class GlobalSessionUI : MonoBehaviour
         // La pausa se abre solo con el botón del mando.
         pauseButton.gameObject.SetActive(false);
 
-        pausePanel = Panel("CanvasPause", "Pausa", "Puedes continuar o finalizar la exposición.
-Tu misión está en tu mano izquierda: levántala y mírala.");
+        pausePanel = Panel("CanvasPause", "Pausa", "Puedes continuar o finalizar la exposición.\nTu misión está en tu mano izquierda: levántala y mírala.");
         Button("Continuar", pausePanel.transform, "Continuar", new Vector2(0,75), new Vector2(480,68), Resume, UI.ButtonKind.Primary);
         Button("Accesibilidad", pausePanel.transform, "Opciones y accesibilidad", new Vector2(0,-7), new Vector2(480,68), ShowAccessibility);
         Button("Menu", pausePanel.transform, "Volver al menú principal", new Vector2(0,-89), new Vector2(480,68), EndAndMenu);
@@ -394,17 +436,39 @@ Tu misión está en tu mano izquierda: levántala y mírala.");
         repeatPanel.SetActive(false);
 
         summaryPanel = Panel("CanvasSessionSummary", "Resumen de sesión", "Datos registrados localmente");
-        GameObject reportBox = Box("ReporteFondo", summaryPanel.transform, new Vector2(0,30), new Vector2(840,230), UI.PaperLight);
+        summaryDescription = summaryPanel.transform.Find("Descripcion").GetComponent<TMP_Text>();
+        // Vista 1: registro de la sesión (niveles completados y estado del envío).
+        GameObject recordView = UI.Node(summaryPanel.transform, "VistaRegistro");
+        UI.Stretch(recordView);
+        summaryRecordView = recordView.AddComponent<CanvasGroup>();
+        GameObject reportBox = Box("ReporteFondo", recordView.transform, new Vector2(0,30), new Vector2(840,230), UI.PaperLight);
         GameObject reportBorder = UI.Node(reportBox.transform, "Borde");
         UI.Stretch(reportBorder);
         UI.AddImage(reportBorder, UI.Frame, UI.WithAlpha(UI.Ink, .2f)).fillCenter = false;
-        summaryText = Label("Reporte", summaryPanel.transform, "", 19, new Vector2(0,30), new Vector2(800,210), UI.Face.Type);
+        summaryText = Label("Reporte", recordView.transform, "", 19, new Vector2(0,30), new Vector2(800,210), UI.Face.Type);
         summaryText.alignment = TextAlignmentOptions.TopLeft;
         summaryText.overflowMode = TextOverflowModes.Ellipsis;
         // Estado del envío al backend (BPMN «¿Almacena datos?» y secuencia «Retroalimentación guardada»).
-        syncText = Label("EnvioServidor", summaryPanel.transform, "", 20, new Vector2(0,-118), new Vector2(820,52), UI.Face.Type, UI.SageDeep);
+        syncText = Label("EnvioServidor", recordView.transform, "", 20, new Vector2(0,-118), new Vector2(820,52), UI.Face.Type, UI.SageDeep);
+
+        // Vista 2: lo que dijo la IA sobre la sesión (botón «Ver resumen»).
+        GameObject aiView = UI.Node(summaryPanel.transform, "VistaResumenIA");
+        UI.Stretch(aiView);
+        summaryAiView = aiView.AddComponent<CanvasGroup>();
+        GameObject aiBox = Box("ResumenFondo", aiView.transform, new Vector2(0,22), new Vector2(860,250), UI.PaperLight);
+        GameObject aiBorder = UI.Node(aiBox.transform, "Borde");
+        UI.Stretch(aiBorder);
+        UI.AddImage(aiBorder, UI.Frame, UI.WithAlpha(UI.SageDeep, .45f)).fillCenter = false;
+        aiSummaryText = Label("TextoIA", aiView.transform, "", 22, new Vector2(0,22), new Vector2(810,226), UI.Face.Body);
+        aiSummaryText.alignment = TextAlignmentOptions.TopLeft;
+        aiSummaryText.fontSizeMin = 16f;
+        aiSummaryText.overflowMode = TextOverflowModes.Ellipsis;
+        Label("AvisoIA", aiView.transform, AiDisclaimer, 17, new Vector2(0,-128), new Vector2(840,44), UI.Face.Type, UI.InkSoft);
+        aiView.SetActive(false);
+
         Button("Finalizar", summaryPanel.transform, "Finalizar", new Vector2(-210,-210), new Vector2(400,68), EndAndMenu);
-        Button("Menu", summaryPanel.transform, "Ver resultado en el Refugio", new Vector2(210,-210), new Vector2(400,68), EndAndMenu, UI.ButtonKind.Primary);
+        Button summaryToggle = Button("VerResumen", summaryPanel.transform, "Ver resumen", new Vector2(210,-210), new Vector2(400,68), ToggleAiSummary, UI.ButtonKind.Primary);
+        summaryToggleLabel = summaryToggle.GetComponentInChildren<TMP_Text>();
         summaryPanel.SetActive(false);
 
         // SUDS (Wolpe, 1969): 0 = nada de ansiedad, 100 = la máxima que puedas imaginar. Textos aprobados por Sara (2026-11-05).
@@ -452,10 +516,9 @@ Tu misión está en tu mano izquierda: levántala y mírala.");
             accessibilityValues[i] = Label("Valor" + i, accessibilityPanel.transform, "", 22, new Vector2(220, y), new Vector2(180, 52), UI.Face.TypeBold, UI.SageDeep);
             Button("Mas" + i, accessibilityPanel.transform, "+", new Vector2(350, y), new Vector2(60, 44), () => ChangeAccessibility(setting, 1), UI.ButtonKind.Key);
         }
-        Label("Nota", accessibilityPanel.transform, "El tamaño de la letra y del personaje se aplican al cargar el siguiente nivel.", 17,
-            new Vector2(0, -184), new Vector2(820, 40), UI.Face.Type, UI.InkSoft);
-        Button("Restablecer", accessibilityPanel.transform, "Restablecer", new Vector2(-210, -240), new Vector2(400, 64), ResetAccessibility);
-        Button("Volver", accessibilityPanel.transform, "Volver", new Vector2(210, -240), new Vector2(400, 64), ShowPause, UI.ButtonKind.Primary);
+        Button("Restablecer", accessibilityPanel.transform, "Restablecer", new Vector2(-290, -240), new Vector2(260, 64), ResetAccessibility);
+        Button("Aplicar", accessibilityPanel.transform, "Aplicar", new Vector2(0, -240), new Vector2(260, 64), ApplyAccessibility, UI.ButtonKind.Primary);
+        Button("Volver", accessibilityPanel.transform, "Volver", new Vector2(290, -240), new Vector2(260, 64), ShowPause);
         accessibilityPanel.SetActive(false);
     }
 
@@ -463,23 +526,51 @@ Tu misión está en tu mano izquierda: levántala y mírala.");
     {
         if (accessibilityValues == null) return;
         for (int i = 0; i < accessibilityValues.Length; i++)
-            if (accessibilityValues[i] != null) accessibilityValues[i].text = NeuroPhobiaAccessibility.Label(AccessibilityRows[i]);
+            if (accessibilityValues[i] != null) accessibilityValues[i].text = NeuroPhobiaAccessibility.PendingLabel(AccessibilityRows[i]);
     }
 
+    // + y − cambian solo el valor mostrado; se aplica todo junto con «Aplicar».
     private void ChangeAccessibility(NeuroPhobiaAccessibility.Setting setting, int direction)
     {
-        float previousSpeed = NeuroPhobiaAccessibility.MoveSpeedScale;
-        NeuroPhobiaAccessibility.Step(setting, direction);
-        ApplyMovementNow(previousSpeed);
+        NeuroPhobiaAccessibility.StepPending(setting, direction);
         RefreshAccessibility();
     }
 
     private void ResetAccessibility()
     {
-        float previousSpeed = NeuroPhobiaAccessibility.MoveSpeedScale;
-        NeuroPhobiaAccessibility.ResetAll();
-        ApplyMovementNow(previousSpeed);
+        NeuroPhobiaAccessibility.ResetPending();
         RefreshAccessibility();
+    }
+
+    // Aplica al momento, en este nivel: velocidad y giro, tamaño de la letra (textos ya abiertos), tamaño del
+    // personaje (el rig se reescala sin moverse de sitio) y distancia del menú.
+    private void ApplyAccessibility()
+    {
+        float previousSpeed = NeuroPhobiaAccessibility.MoveSpeedScale;
+        float previousText = NeuroPhobiaAccessibility.TextScale;
+        float previousPlayer = NeuroPhobiaAccessibility.PlayerScale;
+        NeuroPhobiaAccessibility.ApplyPending();
+
+        ApplyMovementNow(previousSpeed);
+        ScaleOpenTexts(NeuroPhobiaAccessibility.TextScale / Mathf.Max(0.01f, previousText));
+        NeuroPhobiaPlayerSettings.RescaleRigs(NeuroPhobiaAccessibility.PlayerScale / Mathf.Max(0.01f, previousPlayer));
+
+        Camera head = canvas != null && canvas.worldCamera != null ? canvas.worldCamera : NeuroPhobiaWorldPanel.GameplayCamera();
+        if (head != null) PlaceInFront(head.transform);
+        RefreshAccessibility();
+    }
+
+    // Todos los textos de interfaz abiertos en el nivel (menús, HUD de la mano, avisos) crecen o se reducen a la vez.
+    private static void ScaleOpenTexts(float ratio)
+    {
+        if (Mathf.Approximately(ratio, 1f)) return;
+        foreach (TextMeshProUGUI text in FindObjectsByType<TextMeshProUGUI>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            text.fontSize *= ratio;
+            if (!text.enableAutoSizing) continue;
+            text.fontSizeMax *= ratio;
+            text.fontSizeMin = Mathf.Min(text.fontSizeMin * ratio, text.fontSizeMax);
+        }
     }
 
     // Velocidad y giro se aplican al momento. PlayerLocomotion ya los lee en cada fotograma;
@@ -595,7 +686,7 @@ Tu misión está en tu mano izquierda: levántala y mírala.");
     }
 
     private void ShowConfirm() { HidePanels(); confirmPanel.SetActive(true); }
-    private void ShowAccessibility() { HidePanels(); RefreshAccessibility(); accessibilityPanel.SetActive(true); }
+    private void ShowAccessibility() { HidePanels(); NeuroPhobiaAccessibility.BeginEdit(); RefreshAccessibility(); accessibilityPanel.SetActive(true); }
     private void HidePanels()
     {
         pausePanel.SetActive(false);
@@ -686,6 +777,111 @@ Tu misión está en tu mano izquierda: levántala y mírala.");
         current.resultPanel.SetActive(false);
         current.summaryText.text = ReportText(SessionManager.Instance != null ? SessionManager.Instance.GetReport() : null);
         current.summaryPanel.SetActive(true);
+    }
+
+    // «Ver resumen» y «Volver»: la ventana pasa con un fundido y un deslizamiento suave de una vista a la otra.
+    private void ToggleAiSummary()
+    {
+        aiViewShown = !aiViewShown;
+        summaryToggleLabel.text = aiViewShown ? "Volver" : "Ver resumen";
+        summaryDescription.text = aiViewShown ? "Resumen de la IA" : "Datos registrados localmente";
+        if (aiViewShown)
+        {
+            aiOpenedAt = Time.unscaledTime;
+            aiNextPoll = 0f;
+            aiShownText = null;
+            RefreshAiSummary();
+        }
+        if (aiTransition != null) StopCoroutine(aiTransition);
+        aiTransition = StartCoroutine(SwitchSummaryView(aiViewShown ? summaryRecordView : summaryAiView, aiViewShown ? summaryAiView : summaryRecordView));
+    }
+
+    private System.Collections.IEnumerator SwitchSummaryView(CanvasGroup from, CanvasGroup to)
+    {
+        // La sesión ya terminó con el juego en pausa (timeScale 0): todo se anima con tiempo real.
+        RectTransform toRect = (RectTransform)to.transform;
+        for (float t = 0f; t < AiFadeSeconds; t += Time.unscaledDeltaTime)
+        {
+            from.alpha = 1f - t / AiFadeSeconds;
+            yield return null;
+        }
+        from.alpha = 0f;
+        from.gameObject.SetActive(false);
+
+        to.gameObject.SetActive(true);
+        to.alpha = 0f;
+        for (float t = 0f; t < AiFadeSeconds; t += Time.unscaledDeltaTime)
+        {
+            float k = 1f - (1f - t / AiFadeSeconds) * (1f - t / AiFadeSeconds);   // frena al final
+            to.alpha = k;
+            toRect.anchoredPosition = new Vector2(0f, -AiSlidePixels * (1f - k));
+            yield return null;
+        }
+        to.alpha = 1f;
+        toRect.anchoredPosition = Vector2.zero;
+        aiTransition = null;
+    }
+
+    // Texto de la vista de la IA: se pide al servidor cada pocos segundos mientras se prepara.
+    private void RefreshAiSummary()
+    {
+        if (apiClient == null) apiClient = FindFirstObjectByType<FastAPIClient>();
+        SessionReport report = SessionManager.Instance != null ? SessionManager.Instance.GetReport() : null;
+        string sessionId = SessionManager.Instance != null ? SessionManager.Instance.SessionId : null;
+        DeviceContextDto context = apiClient != null ? apiClient.Context : null;
+
+        string text;
+        bool final = true;
+        if (report != null && report.testSession)
+            text = "Sesión de prueba: no se genera un resumen de la IA.";
+        else if (apiClient == null || !apiClient.IsPaired)
+            text = "El visor no está vinculado, así que no hay resumen de la IA.";
+        else if (context != null && context.HasFeedbackFor(sessionId) && !context.FeedbackPending(sessionId)
+                 && !string.IsNullOrEmpty(context.AiSummaryText(sessionId)))
+            text = context.AiSummaryText(sessionId);
+        else if (Time.unscaledTime - aiOpenedAt > AiWaitTimeoutSeconds)
+            text = "El resumen todavía no está listo. Podrás verlo en «Resultados guardados» del menú.";
+        else
+        {
+            final = false;
+            text = AiPreparing + new string('.', 1 + (int)(Time.unscaledTime * 2f) % 3);
+            if (Time.unscaledTime >= aiNextPoll)
+            {
+                aiNextPoll = Time.unscaledTime + AiPollSeconds;
+                apiClient.StartCoroutine(apiClient.RefreshContext(null));
+            }
+        }
+
+        if (!final)
+        {
+            if (aiTypewriter != null) { StopCoroutine(aiTypewriter); aiTypewriter = null; }
+            aiShownText = null;
+            aiSummaryText.maxVisibleCharacters = 99999;
+            if (aiSummaryText.text != text) aiSummaryText.text = text;
+            return;
+        }
+        if (aiShownText == text) return;
+        aiShownText = text;
+        aiSummaryText.text = text;
+        if (aiTypewriter != null) StopCoroutine(aiTypewriter);
+        aiTypewriter = StartCoroutine(TypeAiSummary());
+    }
+
+    // El texto de la IA aparece escribiéndose poco a poco.
+    private System.Collections.IEnumerator TypeAiSummary()
+    {
+        aiSummaryText.ForceMeshUpdate();
+        int total = aiSummaryText.textInfo.characterCount;
+        float shown = 0f;
+        aiSummaryText.maxVisibleCharacters = 0;
+        while (shown < total)
+        {
+            shown += AiCharactersPerSecond * Time.unscaledDeltaTime;
+            aiSummaryText.maxVisibleCharacters = Mathf.Min(total, Mathf.CeilToInt(shown));
+            yield return null;
+        }
+        aiSummaryText.maxVisibleCharacters = 99999;
+        aiTypewriter = null;
     }
 
     private static string ReportText(SessionReport report)

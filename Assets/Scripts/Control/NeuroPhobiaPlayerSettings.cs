@@ -37,4 +37,30 @@ public static class NeuroPhobiaPlayerSettings
                 snap.turnAmount = NeuroPhobiaAccessibility.SnapTurnDegrees;
         }
     }
+
+    /// <summary>
+    /// Aplica al momento un cambio de «Tamaño del personaje» (botón Aplicar): multiplica la escala de los rigs del
+    /// nivel por <paramref name="ratio"/> (nuevo / anterior) sin mover la cabeza de sitio y con los pies en el suelo.
+    /// </summary>
+    public static void RescaleRigs(float ratio)
+    {
+        if (Mathf.Approximately(ratio, 1f) || ratio <= 0f) return;
+        foreach (XROrigin origin in Object.FindObjectsByType<XROrigin>(FindObjectsSortMode.None))
+        {
+            Camera head = origin.Camera;
+            Vector3 headBefore = head != null ? head.transform.position : origin.transform.position;
+            CharacterController controller = origin.GetComponent<CharacterController>();
+            bool wasEnabled = controller != null && controller.enabled;
+            if (controller != null) controller.enabled = false;
+
+            origin.transform.localScale *= ratio;
+            if (head != null)
+            {
+                Vector3 headAfter = head.transform.position;
+                origin.transform.position += new Vector3(headBefore.x - headAfter.x, 0f, headBefore.z - headAfter.z);
+            }
+
+            if (controller != null) controller.enabled = wasEnabled;
+        }
+    }
 }

@@ -443,7 +443,8 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         }
 
         PaperButton(sheet, "Restablecer", "Restablecer", UI.ButtonKind.Secondary, 60f, 640f, 280f, 68f, ResetAccessibility);
-        PaperButton(sheet, "Volver", "Volver al menú", UI.ButtonKind.Primary, 620f, 640f, 280f, 68f, ShowMain);
+        PaperButton(sheet, "Aplicar", "Aplicar", UI.ButtonKind.Primary, 370f, 640f, 280f, 68f, ApplyAccessibility);
+        PaperButton(sheet, "Volver", "Volver al menú", UI.ButtonKind.Secondary, 680f, 640f, 280f, 68f, ShowMain);
         RefreshAccessibility();
     }
 
@@ -453,21 +454,29 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         for (int i = 0; i < accessibilityValues.Length; i++)
         {
             if (accessibilityValues[i] != null)
-                accessibilityValues[i].text = NeuroPhobiaAccessibility.Label(AccessibilityRows[i]);
+                accessibilityValues[i].text = NeuroPhobiaAccessibility.PendingLabel(AccessibilityRows[i]);
         }
     }
 
-    // El tamaño de letra cambia los textos del propio menú, así que se reconstruye y se vuelve a esta pantalla.
+    // + y − cambian solo el valor mostrado; todo se aplica junto con «Aplicar». «Volver» descarta lo no aplicado.
     private void ChangeAccessibility(NeuroPhobiaAccessibility.Setting setting, int direction)
     {
-        NeuroPhobiaAccessibility.Step(setting, direction);
-        AfterAccessibilityChange(setting == NeuroPhobiaAccessibility.Setting.TextSize);
+        NeuroPhobiaAccessibility.StepPending(setting, direction);
+        RefreshAccessibility();
     }
 
     private void ResetAccessibility()
     {
-        NeuroPhobiaAccessibility.ResetAll();
-        AfterAccessibilityChange(true);
+        NeuroPhobiaAccessibility.ResetPending();
+        RefreshAccessibility();
+    }
+
+    // El tamaño de letra cambia los textos del propio menú, así que se reconstruye y se vuelve a esta pantalla.
+    private void ApplyAccessibility()
+    {
+        float previousText = NeuroPhobiaAccessibility.TextScale;
+        NeuroPhobiaAccessibility.ApplyPending();
+        AfterAccessibilityChange(!Mathf.Approximately(previousText, NeuroPhobiaAccessibility.TextScale));
     }
 
     private void AfterAccessibilityChange(bool rebuild)
@@ -489,6 +498,7 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         ShowMain();
         mainPanel.SetActive(false);
         accessibilityPanel.SetActive(true);
+        NeuroPhobiaAccessibility.BeginEdit();
         RefreshAccessibility();
     }
 

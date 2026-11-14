@@ -568,6 +568,23 @@ public class DeviceContextDto
         return status == "pending" || status == "generating";
     }
 
+    /// <summary>
+    /// What the AI said about this session, for the «Ver resumen» window at the end of the session: the suggestion
+    /// and the whole AI text (or the explanation when there is no AI text). Empty if there is no analysis yet.
+    /// </summary>
+    public string AiSummaryText(string sessionId)
+    {
+        if (!HasFeedbackFor(sessionId)) return string.Empty;
+        var text = new StringBuilder();
+        string recommendationText = RecommendationText();
+        if (!string.IsNullOrEmpty(recommendationText)) text.AppendLine(recommendationText).AppendLine();
+        DeviceAnalysisDto analysis = lastFeedback.analysis;
+        string body = analysis.narrativeStatus == "generated" && !string.IsNullOrEmpty(analysis.narrative)
+            ? analysis.narrative : analysis.explanation;
+        if (!string.IsNullOrEmpty(body)) text.Append(body.Trim());
+        return text.ToString().Trim();
+    }
+
     /// <summary>Short result for the patient: level, duration, suggestion and a few sentences of the analysis.</summary>
     public string FeedbackSummary(string sessionId = null)
     {

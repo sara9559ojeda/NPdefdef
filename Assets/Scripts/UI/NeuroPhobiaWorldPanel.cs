@@ -56,19 +56,24 @@ public static class NeuroPhobiaWorldPanel
 
     /// <summary>
     /// Punto delante de la cabeza, a la altura de los ojos, recortado para no quedar detrás de una pared.
-    /// Devuelve la distancia final, por si hay que escalar el panel para que conserve su tamaño aparente.
+    /// Las distancias van en metros percibidos: <paramref name="rigScale"/> es la escala del rig del nivel (cada nivel
+    /// se construyó a una escala distinta), así el panel queda a la misma distancia aparente en todos.
+    /// Devuelve la distancia final en metros del mundo, por si hay que escalar el panel para que conserve su tamaño aparente.
     /// </summary>
-    public static float PlaceInFront(Transform panel, Transform head, float distance, Vector3 localOffset)
+    public static float PlaceInFront(Transform panel, Transform head, float distance, Vector3 localOffset, float rigScale = 1f)
     {
+        rigScale = Mathf.Max(0.01f, rigScale);
+        distance *= rigScale;
+        localOffset *= rigScale;
         Vector3 forward = Vector3.ProjectOnPlane(head.forward, Vector3.up);
         if (forward.sqrMagnitude < 0.0001f) forward = Vector3.ProjectOnPlane(head.up, Vector3.up);
         forward.Normalize();
         Quaternion facing = Quaternion.LookRotation(forward, Vector3.up);
 
         Vector3 eye = head.position;
-        Vector3 offset = facing * new Vector3(localOffset.x, localOffset.y - EyeDrop, 0f);
+        Vector3 offset = facing * new Vector3(localOffset.x, localOffset.y - EyeDrop * rigScale, 0f);
         Vector3 direction = (forward * distance + offset).normalized;
-        float reach = ClearDistance(eye, direction, (forward * distance + offset).magnitude, head.root);
+        float reach = ClearDistance(eye, direction, (forward * distance + offset).magnitude, head.root, rigScale);
         float scale = reach / Mathf.Max(0.01f, (forward * distance + offset).magnitude);
 
         panel.position = eye + direction * reach;
@@ -76,18 +81,67 @@ public static class NeuroPhobiaWorldPanel
         return distance * scale;
     }
 
-    // Distancia libre en una dirección, ignorando triggers, el propio rig y los lienzos.
-    private static float ClearDistance(Vector3 origin, Vector3 direction, float wanted, Transform rig)
+    /// <summary>Escala del rig XR de la cámara (1 sin rig).</summary>
+    public static float RigScale(Transform head)
     {
-        RaycastHit[] hits = Physics.RaycastAll(origin, direction, wanted + WallMargin, ~0, QueryTriggerInteraction.Ignore);
+        Unity.XR.CoreUtils.XROrigin origin = head != null ? head.GetComponentInParent<Unity.XR.CoreUtils.XROrigin>() : null;
+        return origin != null ? Mathf.Max(0.01f, origin.transform.lossyScale.x) : 1f;
+    }
+
+    // Distancia libre en una dirección, ignorando triggers, el propio rig y los lienzos.
+    private static float ClearDistance(Vector3 origin, Vector3 direction, float wanted, Transform rig, float rigScale)
+    {
+        float margin = WallMargin * rigScale;
+        RaycastHit[] hits = Physics.RaycastAll(origin, direction, wanted + margin, ~0, QueryTriggerInteraction.Ignore);
         float nearest = wanted;
         foreach (RaycastHit hit in hits)
         {
             if (rig != null && hit.collider.transform.IsChildOf(rig)) continue;
             if (hit.collider.GetComponentInParent<Canvas>() != null) continue;
             if (hit.collider.attachedRigidbody != null && !hit.collider.attachedRigidbody.isKinematic) continue;
-            nearest = Mathf.Min(nearest, hit.distance - WallMargin);
+            nearest = Mathf.Min(nearest, hit.distance - margin);
         }
-        return Mathf.Max(MinimumDistance, nearest);
+        return Mathf.Max(MinimumDistance * rigScale, nearest);
+    }
+
+    private static readonly System.Collections.Generic.Dictionary<Material, Material> OnTopCopies =
+        new System.Collections.Generic.Dictionary<Material, Material>();
+    private static readonly System.Collections.Generic.HashSet<Material> OnTopMaterials =
+        new System.Collections.Generic.HashSet<Material>();
+
+    /// <summary>
+    /// Hace que todos los gráficos bajo <paramref name="root"/> se dibujen por encima de la escena (sin prueba de
+    /// profundidad), como los menús de cualquier aplicación de VR: una pared o un mueble cercano ya no los corta.
+    /// Se puede llamar varias veces; solo cambia los gráficos que aún no se dibujan encima.
+    /// </summary>
+    public static void DrawOnTop(Transform root)
+    {
+        if (root == null) return;
+        foreach (Graphic graphic in root.GetComponentsInChildren<Graphic>(true))
+        {
+            if (graphic is TMPro.TMP_Text text)
+            {
+                Material source = text.fontSharedMaterial;
+                if (source != null && !OnTopMaterials.Contains(source)) text.fontSharedMaterial = OnTopCopy(source, true);
+            }
+            else
+            {
+                Material source = graphic.material;
+                if (source != null && !OnTopMaterials.Contains(source)) graphic.material = OnTopCopy(source, false);
+            }
+        }
+    }
+
+    // Texts go one step after panels, backgrounds and buttons: with every piece in the same queue the renderer could
+    // paint a semi-transparent background over the letters.
+    private static Material OnTopCopy(Material source, bool isText)
+    {
+        if (OnTopCopies.TryGetValue(source, out Material copy) && copy != null) return copy;
+        copy = new Material(source) { name = source.name + " (NP encima)" };
+        copy.SetInt("unity_GUIZTestMode", (int)UnityEngine.Rendering.CompareFunction.Always);
+        copy.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Overlay + (isText ? 1 : 0);
+        OnTopCopies[source] = copy;
+        OnTopMaterials.Add(copy);
+        return copy;
     }
 }

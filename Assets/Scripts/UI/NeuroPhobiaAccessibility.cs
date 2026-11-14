@@ -79,6 +79,53 @@ public static class NeuroPhobiaAccessibility
         Changed?.Invoke();
     }
 
+    // ------------------------------------------------------------------ cambios pendientes (botón Aplicar)
+    // Los paneles de ajustes cambian una copia; nada cambia en el juego hasta pulsar «Aplicar».
+    private static readonly int[] Pending = new int[Defaults.Length];
+
+    /// <summary>Empieza a editar: la copia pendiente parte de los valores actuales.</summary>
+    public static void BeginEdit()
+    {
+        Load();
+        Array.Copy(Index, Pending, Index.Length);
+    }
+
+    /// <summary>Mueve el valor pendiente una opción (+1 o −1) sin salirse de la lista.</summary>
+    public static void StepPending(Setting setting, int direction)
+    {
+        Load();
+        int i = (int)setting;
+        Pending[i] = Mathf.Clamp(Pending[i] + direction, 0, Values[i].Length - 1);
+    }
+
+    /// <summary>Lleva los valores pendientes a los de fábrica (se aplican al pulsar «Aplicar»).</summary>
+    public static void ResetPending()
+    {
+        Array.Copy(Defaults, Pending, Defaults.Length);
+    }
+
+    public static string PendingLabel(Setting setting) => Labels[(int)setting][Pending[(int)setting]];
+
+    public static bool HasPendingChanges
+    {
+        get
+        {
+            Load();
+            for (int i = 0; i < Index.Length; i++) if (Pending[i] != Index[i]) return true;
+            return false;
+        }
+    }
+
+    /// <summary>Guarda los valores pendientes en el visor y avisa a quien los aplica.</summary>
+    public static void ApplyPending()
+    {
+        Load();
+        Array.Copy(Pending, Index, Index.Length);
+        for (int i = 0; i < Index.Length; i++) PlayerPrefs.SetInt(Key((Setting)i), Index[i]);
+        PlayerPrefs.Save();
+        Changed?.Invoke();
+    }
+
     private static float Value(Setting setting)
     {
         Load();

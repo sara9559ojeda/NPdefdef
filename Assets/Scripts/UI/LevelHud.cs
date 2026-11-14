@@ -27,7 +27,7 @@ public sealed class LevelHud : MonoBehaviour
     {
         BaseControls,
         BaseControls + "\nA junto al sillón: sentarte o levantarte",
-        BaseControls + "\nGrip o gatillo: agarrar el orbe",
+        BaseControls + "\nGrip o gatillo: agarrar el orbe · Pulsar stick izq.: correr",
         BaseControls,
         BaseControls + "\nGatillo o grip sobre lo iluminado: abrir, deslizar o pulsar"
     };
@@ -151,6 +151,10 @@ public sealed class LevelHud : MonoBehaviour
         Anchor(titleText.rectTransform, 0.05f, 0.80f, 0.95f, 0.96f);
         bodyText = CreateText("Mission", panel, 25f, FontStyles.Normal, TextAlignmentOptions.TopLeft);
         Anchor(bodyText.rectTransform, 0.05f, 0.34f, 0.95f, 0.79f);
+        // Long missions (the bedtime routine of Nivel5) shrink to fit instead of spilling over the progress bar.
+        bodyText.enableAutoSizing = true;
+        bodyText.fontSizeMin = 14f * NeuroPhobiaAccessibility.TextScale;
+        bodyText.fontSizeMax = 25f * NeuroPhobiaAccessibility.TextScale;
 
         progressBar = CreateRect("Progress", panel, Vector2.zero).gameObject;
         Anchor((RectTransform)progressBar.transform, 0.05f, 0.27f, 0.95f, 0.31f);
@@ -198,6 +202,23 @@ public sealed class LevelHud : MonoBehaviour
         hintText = CreateText("Hint", cue, 30f, FontStyles.Bold, TextAlignmentOptions.Center);
         Anchor(hintText.rectTransform, 0f, 0f, 1f, 0.42f);
         hintText.gameObject.SetActive(false);
+
+        // The cue floats 1 m ahead of the eyes and the wrist panel close to the hand: drawn over the scene so a
+        // nearby wall or piece of furniture never cuts them (re-applied in LateUpdate, see KeepDrawnOnTop).
+        NeuroPhobiaWorldPanel.DrawOnTop(transform);
+    }
+
+    private const float OnTopCheckSeconds = 0.5f;
+    private float nextOnTopCheck;
+
+    // The HUD styler switches these texts to the project font a moment after they are created, which gives them a
+    // normal material again: the panel background (still drawn over the scene) then covered the letters. Checked
+    // twice a second, it only touches texts whose material is not drawn over the scene.
+    private void KeepDrawnOnTop()
+    {
+        if (Time.unscaledTime < nextOnTopCheck) return;
+        nextOnTopCheck = Time.unscaledTime + OnTopCheckSeconds;
+        NeuroPhobiaWorldPanel.DrawOnTop(transform);
     }
 
     private Canvas CreateCanvas(string objectName, out RectTransform root)
@@ -280,6 +301,7 @@ public sealed class LevelHud : MonoBehaviour
 
     private void LateUpdate()
     {
+        KeepDrawnOnTop();
         Camera head = NeuroPhobiaWorldPanel.GameplayCamera();
         if (head == null) return;
 
