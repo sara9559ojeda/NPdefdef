@@ -8,34 +8,33 @@ using UnityEngine.XR;
 
 /// <summary>
 /// Sitting is the one action that exists only in Nivel2. With the A button of the right controller (C on a
-/// keyboard) the player sits on an armchair and stands up again, but only inside the invisible zone around an
-/// armchair (every scene object whose root name contains "sofa").
-/// - Entering a zone shows the "A" badge on the armchair and gives a short vibration, so the player knows it
-///   can be used.
-/// - Sitting is a short trip hidden by a fade: the player is carried onto the seat, facing the spider, with the
-///   eyes at chair height. Movement with the stick is locked while seated; turning still works.
-/// - Standing up fades again and returns the player to where they were standing.
+/// keyboard) the player sits on the armchair or the sofa and stands up again, but only next to one.
+/// - Next to a seat the "A · Sentarte" badge shows over it and the right hand vibrates once.
+/// - Sitting: the view fades, the player is placed ON the cushion (measured by Level2Armchairs: hips over the
+///   cushion, eyes at seated height, facing the front of the seat, never inside the furniture), the view opens and
+///   settles down a few centimetres, like sitting down. Movement with the stick is locked while seated; turning works.
+/// - Standing up fades again and returns the player to where they were standing, next to the seat.
 /// Created automatically in Nivel2; the scene is not modified.
 /// </summary>
 public sealed class Level2SitToggle : MonoBehaviour
 {
-    private const string SpiderName = "NP_WolfSpider_Nivel2_Static";
     private const string SitPrompt = "A · Sentarte";
     private const string StandHint = "Pulsa A para levantarte.";
     private const float StandHintSeconds = 5f;
-    private const float SeatedEyeHeight = 1.1f;
-    private const float MaxDrop = 0.9f;
-    // Horizontal margin (m) of the zone around the armchair.
+    // Perceived metres (multiplied by the rig scale of the level).
+    private const float SeatedEyeAboveCushion = 0.72f;
+    private const float EyesAheadOfHips = 0.08f;
+    private const float SettleDrop = 0.08f;
     private const float ZoneMargin = 0.6f;
-    // Zone height (m) at rig scale 1; multiplied by the rig scale so it always covers the standing head.
     private const float ZoneHeight = 2.6f;
-    private const float FadeSeconds = 0.25f;
+    private const float FadeSeconds = 0.3f;
+    private const float SettleSeconds = 0.35f;
     private const int IgnoreRaycastLayer = 2;
 
     private sealed class Seat
     {
+        public Level2Armchairs.Seat info;
         public BoxCollider zone;
-        public Vector3 seatPoint;
         public Vector3 promptPoint;
     }
 
@@ -116,46 +115,34 @@ public sealed class Level2SitToggle : MonoBehaviour
         return true;
     }
 
-    // One zone per armchair. The meshes are called "Plane.010", "cloth.015"...; the name with "sofa" belongs to
-    // the root object of the furniture, so the zone is built from all the renderers under that root.
+    private float RigScale => Mathf.Max(0.01f, origin.transform.lossyScale.y);
+
+    // One zone per seat, around the furniture (which is now solid), tall enough for the standing head.
     private void BuildSeats()
     {
-        float rigScale = Mathf.Max(1f, origin.transform.lossyScale.y);
-        foreach (Transform t in FindObjectsByType<Transform>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+        float rigScale = RigScale;
+        foreach (Level2Armchairs.Seat info in Level2Armchairs.All())
         {
-            if (!IsSofaRoot(t)) continue;
-            Renderer[] renderers = t.GetComponentsInChildren<Renderer>();
-            if (renderers.Length == 0) continue;
-
-            Bounds bounds = renderers[0].bounds;
-            for (int i = 1; i < renderers.Length; i++) bounds.Encapsulate(renderers[i].bounds);
-
+            Bounds bounds = info.bounds;
+            float margin = ZoneMargin * rigScale;
             float height = ZoneHeight * rigScale;
-            GameObject zoneObject = new GameObject("NP_Seat_Zone_" + t.name);
+            GameObject zoneObject = new GameObject("NP_Seat_Zone_" + info.root.name);
             zoneObject.layer = IgnoreRaycastLayer;   // does not block the controller rays or the gaze
             zoneObject.transform.position = new Vector3(bounds.center.x, bounds.min.y + height * 0.5f, bounds.center.z);
             BoxCollider zone = zoneObject.AddComponent<BoxCollider>();
             zone.isTrigger = true;
-            zone.size = new Vector3(bounds.size.x + ZoneMargin * 2f, height, bounds.size.z + ZoneMargin * 2f);
+            zone.size = new Vector3(bounds.size.x + margin * 2f, height, bounds.size.z + margin * 2f);
 
             seats.Add(new Seat
             {
+                info = info,
                 zone = zone,
-                seatPoint = new Vector3(bounds.center.x, bounds.min.y, bounds.center.z),
-                promptPoint = new Vector3(bounds.center.x, bounds.max.y + 0.2f * rigScale, bounds.center.z)
+                promptPoint = new Vector3(info.seatPoint.x, bounds.max.y + 0.15f * rigScale, info.seatPoint.z)
             });
         }
     }
 
-    private static bool IsSofaRoot(Transform t)
-    {
-        if (!t.name.ToLowerInvariant().Contains("sofa")) return false;
-        for (Transform p = t.parent; p != null; p = p.parent)
-            if (p.name.ToLowerInvariant().Contains("sofa")) return false;
-        return true;
-    }
-
-    // Tracks which armchair zone the head is in; entering one shows the badge and vibrates the right hand.
+    // Tracks which seat zone the head is in; entering one shows the badge and vibrates the right hand.
     private void UpdateNearbySeat()
     {
         Seat current = null;
@@ -194,19 +181,36 @@ public sealed class Level2SitToggle : MonoBehaviour
         CharacterController controller = origin.GetComponent<CharacterController>();
         if (controller != null) controller.enabled = false;
 
-        // Lower the view only as much as needed to reach chair height.
-        float drop = Mathf.Clamp(origin.CameraInOriginSpacePos.y - SeatedEyeHeight, 0f, MaxDrop);
-        cameraOffset.localPosition = standingOffset - Vector3.up * drop;
+        float rigScale = RigScale;
+        Level2Armchairs.Seat info = seat.info;
 
-        FaceSpider(seat.seatPoint);
-        Vector3 head = origin.Camera.transform.position;
-        origin.MoveCameraToWorldLocation(new Vector3(seat.seatPoint.x, head.y, seat.seatPoint.z));
+        // Facing the front of the seat (the spider jar stands in front of the armchair).
+        FaceDirection(info.front);
+
+        // Eyes over the hips, at seated height above the cushion; a few centimetres higher before the settle.
+        Vector3 eyes = info.seatPoint + info.front * (EyesAheadOfHips * rigScale) +
+                       Vector3.up * ((SeatedEyeAboveCushion + SettleDrop) * rigScale);
+        float lift = eyes.y - origin.Camera.transform.position.y;
+        cameraOffset.localPosition += Vector3.up * (lift / rigScale);
+        RigPlacement.MoveCameraTo(origin, eyes);
 
         if (controller != null) controller.enabled = true;
         seated = true;
         PlayerLocomotion.MovementLocked = true;
 
         yield return ScreenFader.FadeIn(FadeSeconds);
+
+        // Settle: the view sinks gently into the cushion.
+        Vector3 start = cameraOffset.localPosition;
+        Vector3 end = start - Vector3.up * SettleDrop;
+        for (float t = 0f; t < SettleSeconds; t += Time.unscaledDeltaTime)
+        {
+            float k = 1f - (1f - t / SettleSeconds) * (1f - t / SettleSeconds);
+            cameraOffset.localPosition = Vector3.Lerp(start, end, k);
+            yield return null;
+        }
+        cameraOffset.localPosition = end;
+
         LevelHud.ShowHint(StandHint, StandHintSeconds);
         busy = false;
     }
@@ -234,18 +238,13 @@ public sealed class Level2SitToggle : MonoBehaviour
         PlayerLocomotion.MovementLocked = false;
     }
 
-    // Turns the rig so the player, once seated, looks towards the spider in the jar.
-    private void FaceSpider(Vector3 from)
+    // Turns the rig around the head so the player looks along the given horizontal direction.
+    private void FaceDirection(Vector3 direction)
     {
-        GameObject spider = GameObject.Find(SpiderName);
-        if (spider == null) return;
-
-        Vector3 toSpider = spider.transform.position - from;
-        toSpider.y = 0f;
         Vector3 forward = origin.Camera.transform.forward;
         forward.y = 0f;
-        if (toSpider.sqrMagnitude < 0.01f || forward.sqrMagnitude < 0.01f) return;
-
-        origin.RotateAroundCameraUsingOriginUp(Vector3.SignedAngle(forward, toSpider, Vector3.up));
+        direction.y = 0f;
+        if (direction.sqrMagnitude < 0.01f || forward.sqrMagnitude < 0.01f) return;
+        origin.RotateAroundCameraUsingOriginUp(Vector3.SignedAngle(forward, direction, Vector3.up));
     }
 }

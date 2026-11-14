@@ -5,15 +5,13 @@ using UnityEngine.SceneManagement;
 using UnityEngine.XR;
 
 /// <summary>
-/// Ubica al jugador y a la araña en la sala de Nivel2 al iniciar la escena.
-/// La cabeza real queda en la posición inicial del XR Origin mirando hacia un lado despejado,
-/// y la araña se coloca delante, en el suelo y de cara al jugador.
+/// Ubica al jugador en la sala de Nivel2 al iniciar la escena: de pie junto al sillón, mirando entre el sillón y la
+/// araña, que se queda donde la pone la escena (dentro del jarrón de cristal, sobre la mesita frente al sillón).
 /// Se crea solo en Nivel2; no modifica la escena.
 /// </summary>
 public sealed class Level2SpawnAlign : MonoBehaviour
 {
     private const string SpiderName = "NP_WolfSpider_Nivel2_Static";
-    private const string JarName = "NP_GlassJar_Nivel2";
     private const float SpiderDistance = 4.5f;
     private const float MaxWaitSeconds = 10f;
 
@@ -78,12 +76,35 @@ public sealed class Level2SpawnAlign : MonoBehaviour
         Destroy(gameObject);
     }
 
+    // Perceived metres (multiplied by the rig scale of the level).
+    private const float SpawnAheadOfSeat = 1.2f;
+    private const float SpawnBesideSeat = 1.7f;
+    private const float ClearanceRadius = 0.35f;
+
     private static void Align(XROrigin origin, Vector3 spawn)
     {
         Camera cam = origin.Camera;
         if (cam == null) return;
 
-        Vector3 direction = FindFreeDirection(spawn);
+        // The spider stays where the scene puts it: inside the glass vase on the tea table, in front of the armchair
+        // (Level2SpiderIdleLife keeps it there). The player starts beside the armchair, facing between the seat and
+        // the vase, so the spider and the place to sit are both in view (before, the player faced the first
+        // direction without colliders, which was a door).
+        GameObject spider = GameObject.Find(SpiderName);
+        Vector3 direction;
+        if (spider != null && TryArmchairLayout(origin, spider.transform.position, out Vector3 armchairSpawn, out Vector3 armchairFacing))
+        {
+            spawn = new Vector3(armchairSpawn.x, spawn.y, armchairSpawn.z);
+            direction = armchairFacing;
+        }
+        else if (spider != null && Level2Armchairs.Flat(spider.transform.position - spawn).sqrMagnitude > 0.01f)
+        {
+            direction = Level2Armchairs.Flat(spider.transform.position - spawn).normalized;
+        }
+        else
+        {
+            direction = FindFreeDirection(spawn);
+        }
 
         CharacterController controller = origin.GetComponent<CharacterController>();
         if (controller != null) controller.enabled = false;
@@ -95,13 +116,51 @@ public sealed class Level2SpawnAlign : MonoBehaviour
         float currentYaw = Mathf.Atan2(forward.x, forward.z) * Mathf.Rad2Deg;
         float targetYaw = Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg;
         origin.RotateAroundCameraUsingOriginUp(Mathf.DeltaAngle(currentYaw, targetYaw));
-        origin.MoveCameraToWorldLocation(new Vector3(spawn.x, cam.transform.position.y, spawn.z));
+        RigPlacement.MoveCameraTo(origin, new Vector3(spawn.x, cam.transform.position.y, spawn.z));
 
         if (controller != null) controller.enabled = true;
 
         GroundPlayer(origin, spawn);
-        PlaceSpider(origin, spawn, direction);
         Debug.Log("NeuroPhobia: jugador ubicado en Nivel2 -> " + cam.transform.position);
+    }
+
+    // Player beside the armchair (the free side), looking between the seat and the spider's vase.
+    private static bool TryArmchairLayout(XROrigin origin, Vector3 jar, out Vector3 spawn, out Vector3 facing)
+    {
+        spawn = facing = Vector3.zero;
+        Level2Armchairs.Seat armchair = Level2Armchairs.Armchair();
+        if (armchair == null) return false;
+
+        float scale = Mathf.Max(0.01f, origin.transform.lossyScale.x);
+        Vector3 front = armchair.front;
+        Vector3 side = Vector3.Cross(Vector3.up, front);
+        Vector3 seat = Level2Armchairs.Flat(armchair.seatPoint) + Vector3.up * armchair.bounds.min.y;
+
+        foreach (float sign in new[] { 1f, -1f })
+        {
+            Vector3 candidate = seat + front * (SpawnAheadOfSeat * scale) + side * (sign * SpawnBesideSeat * scale);
+            if (!IsStandable(origin, candidate, scale)) continue;
+            Vector3 toJar = Level2Armchairs.Flat(jar - candidate).normalized;
+            Vector3 toSeat = Level2Armchairs.Flat(seat - candidate).normalized;
+            facing = (toJar * 0.6f + toSeat * 0.4f).normalized;
+            spawn = candidate;
+            return true;
+        }
+        return false;
+    }
+
+    // Floor under the point and room for a standing person (no wall or furniture around the body).
+    private static bool IsStandable(XROrigin origin, Vector3 point, float scale)
+    {
+        float radius = ClearanceRadius * scale;
+        for (float h = 0.5f; h <= 1.7f; h += 0.6f)
+        {
+            foreach (Collider c in Physics.OverlapSphere(point + Vector3.up * (h * scale), radius, ~0, QueryTriggerInteraction.Ignore))
+            {
+                if (!c.transform.IsChildOf(origin.transform)) return false;
+            }
+        }
+        return Physics.Raycast(point + Vector3.up * scale, Vector3.down, 2f * scale, ~0, QueryTriggerInteraction.Ignore);
     }
 
     // Deja los pies del rig sobre el suelo y quita la altura de ojos por defecto del prefab cuando el
@@ -150,84 +209,5 @@ public sealed class Level2SpawnAlign : MonoBehaviour
         }
 
         return Vector3.forward;
-    }
-
-    private static void PlaceSpider(XROrigin origin, Vector3 spawn, Vector3 direction)
-    {
-        GameObject spider = GameObject.Find(SpiderName);
-        if (spider == null)
-        {
-            Debug.LogWarning("NeuroPhobia: Level2SpawnAlign no encontró " + SpiderName);
-            return;
-        }
-
-        Vector3 position = spawn + direction * SpiderDistance;
-        position.y = spawn.y;
-
-        // Suelo bajo la araña, sin contar al propio jugador ni a la araña.
-        RaycastHit[] hits = Physics.RaycastAll(
-            position + Vector3.up * 3f, Vector3.down, 6f, ~0, QueryTriggerInteraction.Ignore);
-        float bestDistance = float.MaxValue;
-        foreach (RaycastHit hit in hits)
-        {
-            Transform t = hit.collider.transform;
-            if (t.IsChildOf(origin.transform) || t.IsChildOf(spider.transform)) continue;
-            if (hit.distance < bestDistance)
-            {
-                bestDistance = hit.distance;
-                position.y = hit.point.y;
-            }
-        }
-
-        spider.transform.SetPositionAndRotation(position, Quaternion.LookRotation(-direction, Vector3.up));
-        BuildGlassJar(spider);
-    }
-
-    // Jarrón de cristal alrededor de la araña. No cuelga de la araña ni lleva "spider" en el nombre
-    // para que NeuroPhobiaLevel2StableGaze no lo confunda con la araña al buscarla por nombre.
-    private static void BuildGlassJar(GameObject spider)
-    {
-        if (GameObject.Find(JarName) != null) return;
-
-        Material glass = Resources.Load<Material>("NP_GlassJar");
-        if (glass == null)
-        {
-            Debug.LogWarning("NeuroPhobia: falta Resources/NP_GlassJar; la araña queda sin jarrón.");
-            return;
-        }
-
-        Bounds bounds = default;
-        bool hasBounds = false;
-        foreach (Renderer renderer in spider.GetComponentsInChildren<Renderer>())
-        {
-            if (!hasBounds) { bounds = renderer.bounds; hasBounds = true; }
-            else bounds.Encapsulate(renderer.bounds);
-        }
-
-        if (!hasBounds) return;
-
-        float radius = Mathf.Max(bounds.extents.x, bounds.extents.z) * 1.35f + 0.05f;
-        float height = bounds.size.y * 1.3f + 0.1f;
-        Vector3 basePoint = new Vector3(bounds.center.x, bounds.min.y, bounds.center.z);
-
-        GameObject jar = new GameObject(JarName);
-        jar.transform.position = basePoint;
-
-        // Cilindro primitivo mide 2 de alto y 1 de diámetro: se escala a la medida del jarrón.
-        GameObject body = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-        body.name = "Cuerpo";
-        body.transform.SetParent(jar.transform, false);
-        body.transform.localPosition = Vector3.up * (height * 0.5f);
-        body.transform.localScale = new Vector3(radius * 2f, height * 0.5f, radius * 2f);
-        body.GetComponent<Renderer>().sharedMaterial = glass;
-        Destroy(body.GetComponent<Collider>());
-
-        GameObject lid = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-        lid.name = "Tapa";
-        lid.transform.SetParent(jar.transform, false);
-        lid.transform.localPosition = Vector3.up * (height + 0.02f);
-        lid.transform.localScale = new Vector3(radius * 2.1f, 0.02f, radius * 2.1f);
-        lid.GetComponent<Renderer>().sharedMaterial = glass;
-        Destroy(lid.GetComponent<Collider>());
     }
 }
