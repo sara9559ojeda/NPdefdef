@@ -11,7 +11,7 @@ using UnityEngine.XR.Interaction.Toolkit.Interactors;
 /// Nivel5: a live spider can be picked up with the hand.
 /// - Only with the hand next to it (grip within <see cref="GrabReach"/> perceived metres): the controller ray cannot
 ///   grab spiders, as it would not be realistic.
-/// - Held, it stays where it was taken (dynamic attach), follows the hand and kicks its legs.
+/// - Held, it stays where it was taken (dynamic attach), follows the hand and keeps still.
 /// - Released, it falls to the floor below, rights itself and walks on from there (in the room where it landed).
 /// While it is held its patrol is off, so the spider rules of Level5CompanionSpiders do not move it.
 /// </summary>
@@ -19,7 +19,9 @@ using UnityEngine.XR.Interaction.Toolkit.Interactors;
 public sealed class Level5GrabbableSpider : MonoBehaviour, IXRSelectFilter
 {
     private const float GrabReach = 0.2f;
-    private const float HeldLegSpeed = 1.6f;
+    // Held, the spider stays still in the hand: its walk animation would make the model turn around its pivot
+    // (the patrol that cancels that drift is off while it is held).
+    private const float HeldLegSpeed = 0f;
     private const float Gravity = 9.81f;
     private const float MaxDropSearch = 3f;
 
