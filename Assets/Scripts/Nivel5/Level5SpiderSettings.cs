@@ -70,6 +70,19 @@ public sealed class Level5SpiderSettings : ScriptableObject
         return phobiaGrade >= 1 && phobiaGrade <= 5 ? phobiaGrade : 1;
     }
 
+    /// <summary>Habitaciones del apartamento del Nivel5 (sala, cocina, cuarto y baño).</summary>
+    public const int Level5Rooms = 4;
+
+    /// <summary>
+    /// Arañas del Nivel5: al menos una por habitación, y más si el grado de fobia lo pide (grado N -> N si N > 4).
+    /// Así toda la casa tiene arañas con cualquier grado (decisión de Sara, 2026-11-13). El Nivel3 sigue usando
+    /// <see cref="SpiderCountForGrade"/>.
+    /// </summary>
+    public static int Level5SpiderCount(int phobiaGrade)
+    {
+        return Mathf.Max(Level5Rooms, SpiderCountForGrade(phobiaGrade));
+    }
+
     public static Level5SpiderSettings Load()
     {
         Level5SpiderSettings loaded = Resources.Load<Level5SpiderSettings>(ResourceName);

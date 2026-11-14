@@ -116,7 +116,7 @@ namespace NeuroPhobia.Tests
 
         // Al empezar el nivel, GlobalSessionUI pide el SUDS «antes» y pausa el juego hasta que se responde.
         // Las pruebas lo contestan con -1 («prefiero no responder») para que el nivel arranque.
-        internal static IEnumerator SkipSudsBefore(float timeoutSeconds = 3f)
+        internal static IEnumerator SkipSudsBefore(float timeoutSeconds = 10f)
         {
             float start = Time.realtimeSinceStartup;
             while (Time.realtimeSinceStartup - start < timeoutSeconds)
@@ -202,6 +202,7 @@ namespace NeuroPhobia.Tests
             PressLampSwitch();
             OpenHinge(Task("TASK_DOOR"));
             OpenHinge(Task("TASK_FRIDGE"));
+            OpenHinge(Task("TASK_BATH"));
             return Find("TaskManager");
         }
 
@@ -240,8 +241,17 @@ namespace NeuroPhobia.Tests
             object manager = Find("Level5CompanionSpiders");
             float minSpawn = (float)Get(Get(manager, "Settings"), "minSpawnDistanceFromPlayer");
             Transform[] spiders = LiveSpiders();
-            Assert.AreEqual(TestPhobiaGrade, (int)Get(manager, "RequestedCount"), "Grado " + TestPhobiaGrade + " debe pedir " + TestPhobiaGrade + " arañas.");
-            Assert.AreEqual(TestPhobiaGrade, spiders.Length, "La cantidad de arañas no coincide con el grado de fobia.");
+            // Al menos una por habitación (4); más si el grado lo pide.
+            int expected = Mathf.Max(4, TestPhobiaGrade);
+            Assert.AreEqual(expected, (int)Get(manager, "RequestedCount"), "Grado " + TestPhobiaGrade + " debe pedir " + expected + " arañas.");
+            Assert.AreEqual(expected, spiders.Length, "La cantidad de arañas no coincide con la regla del nivel.");
+
+            // Cada habitación tiene su araña.
+            foreach (string floorName in new[] { "Piso_Sala", "Piso_Cocina", "Piso_Cuarto", "Piso_Bano" })
+            {
+                Bounds floor = GameObject.Find(floorName).GetComponentInChildren<Renderer>().bounds;
+                Assert.IsTrue(spiders.Any(sp => floor.Contains(new Vector3(sp.position.x, floor.center.y, sp.position.z))), floorName + " no tiene araña.");
+            }
 
             Vector3 start = Camera.main != null ? Camera.main.transform.position : Vector3.zero;
             foreach (Transform spider in spiders)
@@ -252,14 +262,14 @@ namespace NeuroPhobia.Tests
         }
 
         [UnityTest]
-        public IEnumerator Aranas_SinGradoDeFobia_ApareceUnaSola()
+        public IEnumerator Aranas_SinGradoDeFobia_HayUnaPorHabitacion()
         {
             DestroySession();
             yield return LoadLevel();
             yield return WaitForSpiders();
 
-            Assert.AreEqual(1, (int)Get(Find("Level5CompanionSpiders"), "RequestedCount"), "Sin grado válido se usa 1 araña.");
-            Assert.AreEqual(1, LiveSpiders().Length);
+            Assert.AreEqual(4, (int)Get(Find("Level5CompanionSpiders"), "RequestedCount"), "Sin grado válido hay una araña por habitación.");
+            Assert.AreEqual(4, LiveSpiders().Length);
         }
 
         // Las arañas antiguas (CaveSpider de Level5SpawnManager, AranaController) no quedan ocultas con collider,
@@ -361,7 +371,7 @@ namespace NeuroPhobia.Tests
         private static float Flat(Vector3 v) { v.y = 0f; return v.magnitude; }
 
         [UnityTest]
-        public IEnumerator Nivel5_LasCuatroTareasCompletanElNivel()
+        public IEnumerator Nivel5_LasCincoTareasDeLaRutinaCompletanElNivel()
         {
             yield return LoadLevel();
             yield return WaitForSpiders();
@@ -369,13 +379,13 @@ namespace NeuroPhobia.Tests
             object manager = FinishLevelTasksExceptWindow();
             yield return null;
             yield return null;
-            Assert.AreEqual(3, (int)Get(manager, "CompletedCount"), "Lámpara, puerta y nevera deben completarse al apagarla y abrirlas.");
+            Assert.AreEqual(4, (int)Get(manager, "CompletedCount"), "Lámpara, puerta del cuarto, nevera y puerta del baño deben completarse al apagarla y abrirlas.");
 
             OpenWindow();
             float start = Time.realtimeSinceStartup;
-            while ((int)Get(manager, "CompletedCount") < 4 && Time.realtimeSinceStartup - start < 10f) yield return null;
+            while ((int)Get(manager, "CompletedCount") < 5 && Time.realtimeSinceStartup - start < 10f) yield return null;
 
-            Assert.AreEqual(4, (int)Get(manager, "CompletedCount"), "La ventana debe completarse al abrirla.");
+            Assert.AreEqual(5, (int)Get(manager, "CompletedCount"), "La ventana debe completarse al abrirla.");
             yield return null;
             Assert.AreEqual("SESSION_END", GameStateManagerState(), "Al terminar debe aparecer el resumen de sesión.");
             Assert.IsFalse((bool)Get(manager, "RepeatOffered"), "Sin alejamientos no debe ofrecerse repetir.");
@@ -517,10 +527,18 @@ namespace NeuroPhobia.Tests
                     .First(t => t.name == floors[room]).GetComponentInChildren<Renderer>();
 
                 Renderer leaf = hinge.GetComponent<Renderer>();
+                MethodInfo hingeEdge = Game("Level5InteractiveHome").GetMethod("TryPassageDoorHinge", BindingFlags.Public | BindingFlags.Static);
+                object[] edgeArgs = { hinge.transform, Vector3.zero };
+                Assert.IsTrue((bool)hingeEdge.Invoke(null, edgeArgs), root + ": no se encontró el borde de la bisagra.");
+                Vector3 edgeClosed = (Vector3)edgeArgs[1];
                 Vector3 closed = leaf.bounds.center;
                 Call(hinge, "SetAngle", (float)Get(hinge, "openAngle"));
                 Vector3 open = leaf.bounds.center;
+                hingeEdge.Invoke(null, edgeArgs);
+                Vector3 edgeOpen = (Vector3)edgeArgs[1];
                 Call(hinge, "SetAngle", 0f);
+                // La hoja gira sobre el borde opuesto a la manija: ese borde no se desplaza al abrir.
+                Assert.Less(Vector3.Distance(edgeClosed, edgeOpen), 0.02f, root + " no gira sobre el borde opuesto a la manija.");
                 Vector3 swing = open - closed; swing.y = 0f;
                 Vector3 toRoom = floor.bounds.center - closed; toRoom.y = 0f;
                 Assert.Greater(Vector3.Dot(swing, toRoom), 0f, root + " debe abrir hacia dentro de " + room + ".");

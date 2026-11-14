@@ -7,7 +7,10 @@ public class TaskManager : MonoBehaviour
     [Tooltip("Límite de intentos de alejamiento (5, aprobado por Sara). Si se supera, el intento cuenta como no superado y se ofrece repetir.")]
     [Min(0)] public int maxAvoidanceAttempts = 5;
     public Level5HUD hud;
-    private static readonly string[] OfficialTasks = { "TASK_LAMP", "TASK_DOOR", "TASK_FRIDGE", "TASK_WINDOW" };
+    // Rutina «Antes de dormir», en el orden de la historia: agua de la nevera, entrar al cuarto, lavarse los dientes,
+    // ventilar el cuarto y apagar la luz de la sala. El orden se sugiere en el HUD; no se obliga.
+    private static readonly string[] OfficialTasks = { "TASK_FRIDGE", "TASK_DOOR", "TASK_BATH", "TASK_WINDOW", "TASK_LAMP" };
+    public static System.Collections.Generic.IReadOnlyList<string> StoryOrder => OfficialTasks;
     private readonly HashSet<string> completedTasks = new HashSet<string>();
     private bool finished;
     private bool repeatOffered;

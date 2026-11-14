@@ -93,6 +93,9 @@ public sealed class Level5InteractiveHome : MonoBehaviour
         }
 
         SetUpWindow(apartment.transform);
+        SetUpBathTask();
+        if (!RestOnSurface(apartment.transform, "Accesorio_Jabon_Bano"))
+            PlaceOnCounter(apartment.transform, "Accesorio_Jabon_Bano", "Lavamanos_Bano");
         UseSnapTurn();
         foreach (Level5HingeHandle hinge in hinges) Level5HoverHighlight.Attach(hinge.gameObject);
         foreach (Level5SlideHandle slide in slides) Level5HoverHighlight.Attach(slide.gameObject);
@@ -523,6 +526,114 @@ public sealed class Level5InteractiveHome : MonoBehaviour
         barrier.layer = 2;
     }
 
+    // Objetos de adorno que la escena dejó flotando (el jabón del baño): bajan hasta apoyarse en la superficie que
+    // tienen debajo. Solo si está cerca (menos de MaxRestDrop), para no mandarlos al suelo si la superficie no tiene collider.
+    private const float MaxRestDrop = 0.5f;
+
+    private static bool RestOnSurface(Transform apartment, string objectName)
+    {
+        Transform item = apartment.GetComponentsInChildren<Transform>(true).FirstOrDefault(t => t.name == objectName);
+        if (item == null) return false;
+        Renderer[] renderers = item.GetComponentsInChildren<Renderer>();
+        if (renderers.Length == 0) return false;
+        Bounds bounds = renderers[0].bounds;
+        foreach (Renderer r in renderers) bounds.Encapsulate(r.bounds);
+
+        float surface = float.MinValue;
+        Vector3 from = new Vector3(bounds.center.x, bounds.min.y + 0.02f, bounds.center.z);
+        foreach (RaycastHit hit in Physics.RaycastAll(from, Vector3.down, MaxRestDrop + 0.02f, ~0, QueryTriggerInteraction.Ignore))
+        {
+            if (hit.collider.transform.IsChildOf(item) || hit.normal.y < 0.7f) continue;
+            surface = Mathf.Max(surface, hit.point.y);
+        }
+        // Sin collider debajo: la parte de arriba del mueble visible que tiene justo debajo (el lavabo, una repisa).
+        if (surface == float.MinValue)
+        {
+            foreach (Renderer below in apartment.GetComponentsInChildren<Renderer>())
+            {
+                if (below.transform.IsChildOf(item) || !below.enabled) continue;
+                Bounds b = below.bounds;
+                if (b.size.x > 3f || b.size.z > 3f) continue;   // suelo, paredes
+                if (from.x < b.min.x || from.x > b.max.x || from.z < b.min.z || from.z > b.max.z) continue;
+                if (b.max.y > bounds.min.y + 0.005f) continue;
+                surface = Mathf.Max(surface, b.max.y);
+            }
+        }
+        if (surface == float.MinValue) return false;
+        float gap = bounds.min.y - surface;
+        if (gap > 0.003f) item.position -= Vector3.up * gap;
+        return true;
+    }
+
+    // El jabón del baño quedó flotando en medio del cuarto, sin nada debajo: va sobre la encimera del lavamanos.
+    // Se muestrea la parte de arriba del mueble y se elige la altura plana más alta que se repite (la encimera, no el
+    // grifo ni el fondo de la pila), lo más cerca posible de la pared.
+    private static void PlaceOnCounter(Transform apartment, string objectName, string furnitureName)
+    {
+        Transform[] all = apartment.GetComponentsInChildren<Transform>(true);
+        Transform item = all.FirstOrDefault(t => t.name == objectName);
+        Transform furniture = all.FirstOrDefault(t => t.name == furnitureName);
+        if (item == null || furniture == null) return;
+        Collider[] colliders = furniture.GetComponentsInChildren<Collider>();
+        Renderer[] renderers = item.GetComponentsInChildren<Renderer>();
+        if (colliders.Length == 0 || renderers.Length == 0) return;
+
+        Bounds area = colliders[0].bounds;
+        foreach (Collider c in colliders) area.Encapsulate(c.bounds);
+        var hits = new List<Vector3>();
+        const int steps = 8;
+        for (int i = 0; i <= steps; i++)
+        {
+            for (int j = 0; j <= steps; j++)
+            {
+                float x = Mathf.Lerp(area.min.x + area.size.x * 0.08f, area.max.x - area.size.x * 0.08f, i / (float)steps);
+                float z = Mathf.Lerp(area.min.z + area.size.z * 0.08f, area.max.z - area.size.z * 0.08f, j / (float)steps);
+                Ray ray = new Ray(new Vector3(x, area.max.y + 0.5f, z), Vector3.down);
+                float best = float.MinValue; Vector3 bestPoint = Vector3.zero; bool flat = false;
+                foreach (Collider c in colliders)
+                {
+                    if (!c.Raycast(ray, out RaycastHit hit, area.size.y + 1f) || hit.point.y <= best) continue;
+                    best = hit.point.y; bestPoint = hit.point; flat = hit.normal.y > 0.95f;
+                }
+                if (best > float.MinValue && flat) hits.Add(bestPoint);
+            }
+        }
+        if (hits.Count == 0) return;
+
+        // Altura de la encimera: la más alta que comparten al menos 4 muestras (±1 cm).
+        float counter = hits.Select(h => h.y).OrderByDescending(y => y)
+            .FirstOrDefault(y => hits.Count(h => Mathf.Abs(h.y - y) < 0.01f) >= 4);
+        if (counter == 0f) counter = hits.Max(h => h.y);
+        List<Vector3> top = hits.Where(h => Mathf.Abs(h.y - counter) < 0.01f).ToList();
+        // Lo más cerca de la pared más próxima al mueble (el borde de la encimera pegado a la pared).
+        Vector3 wallSide = new Vector3(area.center.x, 0f, area.center.z) - new Vector3(item.position.x, 0f, item.position.z);
+        Vector3 spot = top.OrderByDescending(h => Vector3.Dot(new Vector3(h.x, 0f, h.z), wallSide.normalized)).First();
+
+        Bounds bounds = renderers[0].bounds;
+        foreach (Renderer r in renderers) bounds.Encapsulate(r.bounds);
+        Vector3 offset = item.position - new Vector3(bounds.center.x, bounds.min.y, bounds.center.z);
+        item.position = spot + offset;
+    }
+
+    public const string BathTaskId = "TASK_BATH";
+    private const string BathDoorRoot = "puerta cuarto a baño";
+
+    // Tarea del baño de la rutina «Antes de dormir»: abrir la puerta del baño para lavarse los dientes. Se cumple
+    // solo con la hoja abierta (la misma regla física que la puerta del cuarto). El componente va en un objeto propio:
+    // en la hoja borraría el interactable de la bisagra (Level5TaskInteraction.Configure quita el de su objeto).
+    private static void SetUpBathTask()
+    {
+        Level5HingeHandle bathDoor = hinges.FirstOrDefault(h => h != null && h.name == "door_body" &&
+            h.transform.parent != null && h.transform.parent.parent != null &&
+            h.transform.parent.parent.name.Trim().ToLowerInvariant() == BathDoorRoot);
+        if (bathDoor == null || bathDoor.transform.parent.parent.Find("NP_L5_Tarea_Bano") != null) return;
+        GameObject holder = new GameObject("NP_L5_Tarea_Bano");
+        holder.transform.SetParent(bathDoor.transform.parent.parent, false);
+        Level5TaskInteraction task = holder.AddComponent<Level5TaskInteraction>();
+        task.taskId = BathTaskId;
+        task.hinge = bathDoor;
+    }
+
     public const string WindowSpiderName = "NP_L5_Arana_Ventana";
 
     // Araña posada en la cara exterior del cristal, con la cabeza hacia arriba; sube con el cristal al abrir.
@@ -542,7 +653,9 @@ public sealed class Level5InteractiveHome : MonoBehaviour
             if (behaviour.GetType().Name.Contains("Patrol")) DestroyImmediate(behaviour);
         foreach (Collider collider in spider.GetComponentsInChildren<Collider>(true)) DestroyImmediate(collider);
         foreach (Rigidbody body in spider.GetComponentsInChildren<Rigidbody>(true)) body.isKinematic = true;
-        foreach (Animator animator in spider.GetComponentsInChildren<Animator>(true)) animator.speed = 0.15f;
+        // Quieta: sin su patrulla nadie corrige la deriva de la animación de caminar, y el modelo se iba deslizando
+        // del cristal a la pared mientras se jugaba.
+        foreach (Animator animator in spider.GetComponentsInChildren<Animator>(true)) animator.speed = 0f;
         spider.transform.SetPositionAndRotation(
             new Vector3(opening.center.x, opening.min.y + opening.size.y * 0.35f, opening.center.z) + outside * 0.04f,
             Quaternion.LookRotation(Vector3.up, outside));

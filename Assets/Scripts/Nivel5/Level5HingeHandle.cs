@@ -42,12 +42,15 @@ public sealed class Level5HingeHandle : MonoBehaviour
 
     /// <summary>
     /// Sets the world point the hinge axis passes through, instead of <see cref="pivot"/> or the leaf origin.
-    /// Must be called before <see cref="Initialize"/>.
+    /// Call it while the leaf is still closed. AddComponent already runs Awake → Initialize, so if the hinge was
+    /// initialized the stored hinge point is recomputed here (otherwise the override would be silently ignored).
     /// </summary>
     public void SetHingePoint(Vector3 worldPoint)
     {
         hasHingePointOverride = true;
         hingePointOverride = worldPoint;
+        if (initialized && leaf != null)
+            hingeLocalPoint = leaf.parent != null ? leaf.parent.InverseTransformPoint(worldPoint) : worldPoint;
     }
 
     public float Angle => angle;
