@@ -5,6 +5,7 @@ using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using UnityEngine.XR;
+using UnityEngine.XR.Interaction.Toolkit.Locomotion.Turning;
 using UnityEngine.XR.Interaction.Toolkit.UI;
 using UI = NeuroPhobiaUITheme;
 
@@ -33,8 +34,16 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
     private GameObject resultsPanel;
     private TMP_Text resultsText;
     private string feedbackSessionId;
-    private DeviceContextDto renderedFeedbackContext;
-    private string renderedFeedbackSessionId;
+    // Results screen: one "preparing" state while the result is on its way, then a short summary; the full text
+    // is shown only on request.
+    private const string PreparingResultText = "Preparando tu resultado";
+    private const float ResultPendingTimeoutSeconds = 45f;
+    private const float ResultPollSeconds = 4f;
+    private GameObject resultsDetailButton;
+    private TMP_Text resultsDetailLabel;
+    private bool resultsShowDetail;
+    private float resultsOpenedAt;
+    private float resultsNextPoll;
     private GameObject accessibilityPanel;
     private TMP_Text[] accessibilityValues;
     // Vinculación del visor (contrato API v1, 6.1): es el «Inicio de sesión» del paciente en el BPMN.
@@ -69,6 +78,7 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
 
     private void Start()
     {
+        DisableTurnAround();
         RebuildMenu();
         // Contexto del backend en el Refugio (nunca durante la exposición): grado previo y nivel permitido.
         FastAPIClient api = Api();
@@ -135,6 +145,24 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         }
 
         ShowMain();
+    }
+
+    // En el menú, el giro del rig XR con el stick derecho (atrás 180°, izquierda/derecha a saltos o continuo) movía al
+    // jugador y el menú, que sigue la vista con retardo, se deslizaba hasta volver a ponerse delante. Aquí se quita
+    // todo el giro con el stick; el desplazamiento con el stick izquierdo sigue igual. Girar la cabeza o el cuerpo
+    // de verdad sigue funcionando.
+    private static void DisableTurnAround()
+    {
+        foreach (SnapTurnProvider snap in FindObjectsByType<SnapTurnProvider>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            snap.enableTurnAround = false;
+            snap.enableTurnLeftRight = false;
+        }
+
+        foreach (ContinuousTurnProvider turn in FindObjectsByType<ContinuousTurnProvider>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            turn.enabled = false;
+        }
     }
 
     // Sin skybox: el cartel se ve sobre fondo sólido (los controles siguen visibles).
@@ -386,13 +414,14 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         NeuroPhobiaAccessibility.Setting.TextSize,
         NeuroPhobiaAccessibility.Setting.PlayerSize,
         NeuroPhobiaAccessibility.Setting.MoveSpeed,
+        NeuroPhobiaAccessibility.Setting.TurnMode,
         NeuroPhobiaAccessibility.Setting.TurnAngle,
         NeuroPhobiaAccessibility.Setting.MenuDistance
     };
 
     private static readonly string[] AccessibilityNames =
     {
-        "Tamaño de la letra", "Tamaño del personaje", "Velocidad de movimiento", "Giro con el stick derecho", "Distancia del menú"
+        "Tamaño de la letra", "Tamaño del personaje", "Velocidad de movimiento", "Tipo de giro", "Ángulo del giro a saltos", "Distancia del menú"
     };
 
     private void BuildAccessibilityPanel(Transform parent)
@@ -404,17 +433,18 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         for (int i = 0; i < AccessibilityRows.Length; i++)
         {
             NeuroPhobiaAccessibility.Setting setting = AccessibilityRows[i];
-            float y = 200f + i * 82f;
+            float y = 192f + i * 72f;
             TMP_Text name = UI.AddText(UI.Node(sheet, "Ajuste" + i), AccessibilityNames[i], UI.Face.Body, 25f, UI.Ink, TextAlignmentOptions.MidlineLeft);
-            UI.Place(name.gameObject, 60f, y, 430f, 66f);
-            PaperButton(sheet, "Menos" + i, "-", UI.ButtonKind.Key, 500f, y, 70f, 66f, () => ChangeAccessibility(setting, -1), 30f);
+            UI.Place(name.gameObject, 60f, y, 430f, 60f);
+            PaperButton(sheet, "Menos" + i, "-", UI.ButtonKind.Key, 500f, y, 70f, 60f, () => ChangeAccessibility(setting, -1), 30f);
             accessibilityValues[i] = UI.AddText(UI.Node(sheet, "Valor" + i), "", UI.Face.TypeBold, 25f, UI.SageDeep, TextAlignmentOptions.Center);
-            UI.Place(accessibilityValues[i].gameObject, 578f, y, 244f, 66f);
-            PaperButton(sheet, "Mas" + i, "+", UI.ButtonKind.Key, 830f, y, 70f, 66f, () => ChangeAccessibility(setting, 1), 30f);
+            UI.Place(accessibilityValues[i].gameObject, 578f, y, 244f, 60f);
+            PaperButton(sheet, "Mas" + i, "+", UI.ButtonKind.Key, 830f, y, 70f, 60f, () => ChangeAccessibility(setting, 1), 30f);
         }
 
         PaperButton(sheet, "Restablecer", "Restablecer", UI.ButtonKind.Secondary, 60f, 640f, 280f, 68f, ResetAccessibility);
-        PaperButton(sheet, "Volver", "Volver al menú", UI.ButtonKind.Primary, 620f, 640f, 280f, 68f, ShowMain);
+        PaperButton(sheet, "Aplicar", "Aplicar", UI.ButtonKind.Primary, 370f, 640f, 280f, 68f, ApplyAccessibility);
+        PaperButton(sheet, "Volver", "Volver al menú", UI.ButtonKind.Secondary, 680f, 640f, 280f, 68f, ShowMain);
         RefreshAccessibility();
     }
 
@@ -424,21 +454,29 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         for (int i = 0; i < accessibilityValues.Length; i++)
         {
             if (accessibilityValues[i] != null)
-                accessibilityValues[i].text = NeuroPhobiaAccessibility.Label(AccessibilityRows[i]);
+                accessibilityValues[i].text = NeuroPhobiaAccessibility.PendingLabel(AccessibilityRows[i]);
         }
     }
 
-    // El tamaño de letra cambia los textos del propio menú, así que se reconstruye y se vuelve a esta pantalla.
+    // + y − cambian solo el valor mostrado; todo se aplica junto con «Aplicar». «Volver» descarta lo no aplicado.
     private void ChangeAccessibility(NeuroPhobiaAccessibility.Setting setting, int direction)
     {
-        NeuroPhobiaAccessibility.Step(setting, direction);
-        AfterAccessibilityChange(setting == NeuroPhobiaAccessibility.Setting.TextSize);
+        NeuroPhobiaAccessibility.StepPending(setting, direction);
+        RefreshAccessibility();
     }
 
     private void ResetAccessibility()
     {
-        NeuroPhobiaAccessibility.ResetAll();
-        AfterAccessibilityChange(true);
+        NeuroPhobiaAccessibility.ResetPending();
+        RefreshAccessibility();
+    }
+
+    // El tamaño de letra cambia los textos del propio menú, así que se reconstruye y se vuelve a esta pantalla.
+    private void ApplyAccessibility()
+    {
+        float previousText = NeuroPhobiaAccessibility.TextScale;
+        NeuroPhobiaAccessibility.ApplyPending();
+        AfterAccessibilityChange(!Mathf.Approximately(previousText, NeuroPhobiaAccessibility.TextScale));
     }
 
     private void AfterAccessibilityChange(bool rebuild)
@@ -460,6 +498,7 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         ShowMain();
         mainPanel.SetActive(false);
         accessibilityPanel.SetActive(true);
+        NeuroPhobiaAccessibility.BeginEdit();
         RefreshAccessibility();
     }
 
@@ -781,6 +820,9 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         resultsText.textWrappingMode = TextWrappingModes.Normal;
         UI.Place(resultsText.gameObject, 60f, 180f, 940f, 380f);
         PaperButton(resultsSheet, "Volver", "Volver", UI.ButtonKind.Secondary, 60f, 592f, 156f, 68f, ShowMain);
+        resultsDetailLabel = PaperButton(resultsSheet, "Detalle", "Ver detalle", UI.ButtonKind.Secondary, 740f, 592f, 260f, 68f, ToggleResultsDetail);
+        resultsDetailButton = resultsDetailLabel.GetComponentInParent<Button>().gameObject;
+        resultsDetailButton.SetActive(false);
         resultsPanel.SetActive(false);
     }
 
@@ -794,10 +836,17 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
         ShowMain();
         mainPanel.SetActive(false);
         feedbackSessionId = sessionId;
+        resultsShowDetail = false;
+        resultsOpenedAt = Time.unscaledTime;
+        resultsNextPoll = 0f;
         resultsPanel.SetActive(true);
         RefreshResults();
-        FastAPIClient api = Api();
-        if (api != null && api.IsPaired) api.StartCoroutine(api.RefreshContext(_ => RefreshResults()));
+    }
+
+    private void ToggleResultsDetail()
+    {
+        resultsShowDetail = !resultsShowDetail;
+        RefreshResults();
     }
 
     private void Update()
@@ -809,16 +858,37 @@ public sealed class NeuroPhobiaMainMenuModern : MonoBehaviour
     {
         FastAPIClient api = Api();
         DeviceContextDto context = api != null ? api.Context : null;
-        if (renderedFeedbackContext == context && renderedFeedbackSessionId == feedbackSessionId && !string.IsNullOrEmpty(resultsText.text)) return;
-        renderedFeedbackContext = context;
-        renderedFeedbackSessionId = feedbackSessionId;
         SessionReport report = SessionManager.Instance != null ? SessionManager.Instance.GetReport() : null;
-        if (!string.IsNullOrEmpty(feedbackSessionId) && report != null && report.testSession)
-            resultsText.text = "Esta es una sesión de prueba. Sus registros no generan recomendaciones ni cuentan como progreso.";
-        else if (api == null || api.Context == null)
-            resultsText.text = "Aún no hay un análisis disponible. Vincula el visor y comprueba el estado del envío.";
+        bool testSession = !string.IsNullOrEmpty(feedbackSessionId) && report != null && report.testSession;
+        bool waiting = !testSession && api != null && api.IsPaired
+            && (context == null || context.FeedbackPending(feedbackSessionId))
+            && Time.unscaledTime - resultsOpenedAt < ResultPendingTimeoutSeconds;
+
+        // The result is asked for when the screen opens and again every few seconds while it is being prepared.
+        if (api != null && api.IsPaired && Time.unscaledTime >= resultsNextPoll && (waiting || resultsNextPoll <= 0f))
+        {
+            resultsNextPoll = Time.unscaledTime + ResultPollSeconds;
+            api.StartCoroutine(api.RefreshContext(null));
+        }
+
+        string text;
+        bool hasDetail = false;
+        if (testSession)
+            text = "Esta es una sesión de prueba. Sus registros no generan recomendaciones ni cuentan como progreso.";
+        else if (waiting)
+            text = PreparingResultText + new string('.', 1 + (int)(Time.unscaledTime * 2f) % 3);
+        else if (context == null)
+            text = "Aún no hay un análisis disponible. Vincula el visor y comprueba el estado del envío.";
         else
-            resultsText.text = api.Context.FeedbackText(feedbackSessionId);
+        {
+            hasDetail = context.HasFeedbackFor(feedbackSessionId);
+            text = resultsShowDetail && hasDetail ? context.FeedbackText(feedbackSessionId) : context.FeedbackSummary(feedbackSessionId);
+        }
+
+        if (resultsText.text != text) resultsText.text = text;
+        if (resultsDetailButton.activeSelf != hasDetail) resultsDetailButton.SetActive(hasDetail);
+        string detailLabel = resultsShowDetail ? "Ver resumen" : "Ver detalle";
+        if (resultsDetailLabel.text != detailLabel) resultsDetailLabel.text = detailLabel;
     }
 
     private void HideSessionPanels()

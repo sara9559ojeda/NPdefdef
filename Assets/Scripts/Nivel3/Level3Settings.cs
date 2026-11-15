@@ -11,16 +11,17 @@ public sealed class Level3Settings : ScriptableObject
     public const string ResourceName = "Level3Settings";
 
     [Header("Misión (pendiente de validar clínicamente)")]
-    [Tooltip("Distancia máxima (m) entre la cabeza y el orbe para que cuente la mirada.")]
+    [Tooltip("Distancia máxima (m) entre la cabeza y el orbe para poder agarrarlo.")]
     public float reachDistance = 1.5f;
-    [Tooltip("Segundos seguidos mirando el orbe, ya cerca de él, para alcanzarlo.")]
+    [Tooltip("Heredado: ya no se usa (el orbe se agarra, no se mira).")]
     public float gazeSeconds = 3f;
-    [Tooltip("Ángulo (grados) entre la mirada y el orbe que todavía cuenta como «mirarlo».")]
+    [Tooltip("Heredado: ya no se usa (el orbe se agarra, no se mira).")]
     public float gazeAngle = 14f;
 
     [Header("Arañas según el grado de fobia (pendiente de validar clínicamente)")]
-    [Tooltip("Arañas en total (incluida la original) para los grados 1 a 5.")]
-    public int[] spidersByGrade = { 4, 6, 8, 10, 12 };
+    [Tooltip("Arañas en total (incluida la original) para los grados 1 a 5. El grado es el miedo que la persona dice " +
+             "sentir: más miedo, menos arañas (exposición gradual; decisión de Sara, 2026-11-13).")]
+    public int[] spidersByGrade = { 12, 10, 8, 6, 4 };
     [Tooltip("Fracción de las arañas que patrullan cerca de los orbes; el resto se reparte por la sala.")]
     [Range(0f, 1f)] public float nearOrbsFraction = 0.5f;
     [Tooltip("Distancia mínima (m) de cualquier araña al punto de inicio del jugador.")]
@@ -35,14 +36,19 @@ public sealed class Level3Settings : ScriptableObject
     public float moveSpeed = 0.14f;
     [Tooltip("Giro máximo (grados por segundo). Bajo = sin giros bruscos.")]
     public float turnRate = 70f;
-    [Tooltip("Radio (m) de la ruta circular de cada araña.")]
-    public float routeRadius = 1.3f;
+    [Tooltip("Radio (m) de la zona por la que deambula cada araña alrededor de su sitio.")]
+    public float routeRadius = 5f;
+    [Tooltip("Al deambular, ninguna araña elige un destino a menos de esta distancia (m) del jugador ni camina a través de él.")]
+    public float spiderPlayerClearance = 1.5f;
 
-    /// <summary>Arañas en total para un grado (1–5). Un grado ausente o fuera de rango usa el del grado 1.</summary>
+    /// <summary>
+    /// Arañas en total para un grado (1–5): más miedo, menos arañas. Un grado ausente o fuera de rango usa la
+    /// exposición mínima (el último valor de la lista).
+    /// </summary>
     public int SpiderCountForGrade(int phobiaGrade)
     {
         if (spidersByGrade == null || spidersByGrade.Length == 0) return 1;
-        int index = phobiaGrade >= 1 && phobiaGrade <= spidersByGrade.Length ? phobiaGrade - 1 : 0;
+        int index = phobiaGrade >= 1 && phobiaGrade <= spidersByGrade.Length ? phobiaGrade - 1 : spidersByGrade.Length - 1;
         return Mathf.Max(1, spidersByGrade[index]);
     }
 

@@ -16,15 +16,16 @@ MonoBehaviour:
   gazeSeconds: 3
   gazeAngle: 14
   spidersByGrade:
-  - 4
-  - 6
-  - 8
-  - 10
   - 12
+  - 10
+  - 8
+  - 6
+  - 4
   nearOrbsFraction: 0.5
   minDistanceFromPlayer: 4
   minDistanceFromOrb: 2.2
   minDistanceBetweenSpiders: 2.5
   moveSpeed: 0.14
   turnRate: 70
-  routeRadius: 1.3
+  routeRadius: 5
+  spiderPlayerClearance: 1.5

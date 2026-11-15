@@ -10,95 +10,68 @@ public class Level5HUD : MonoBehaviour
     public TMP_Text completionText;
     public Button finishButton;
 
-    // El canvas de la escena es de mundo y quedaba fijo cerca del origen. Ahora sigue la vista con retardo, a 2,1 m,
-    // abajo a la izquierda, sin tapar el centro (NeuroPhobiaHudFollow).
-    private static readonly Vector2 HudSize = new Vector2(760f, 520f);
-    private static readonly Vector2 HudOffset = new Vector2(-0.62f, -0.40f);
-    private const float HudWidthMeters = 0.72f;
-    private Canvas worldCanvas;
+    public const string Title = "NIVEL 5 · ANTES DE DORMIR";
+    public const string Story = "Es de noche. Prepárate para dormir:";
+
+    // Each task of the bedtime routine: room and what to do, in the order of the story (TaskManager.StoryOrder).
+    private static readonly Dictionary<string, string> StoryLines = new Dictionary<string, string>
+    {
+        { "TASK_FRIDGE", "Cocina: abre la nevera y toma agua" },
+        { "TASK_DOOR", "Cuarto: abre la puerta" },
+        { "TASK_BATH", "Baño: abre la puerta y lávate los dientes" },
+        { "TASK_WINDOW", "Cuarto: abre la ventana para ventilar" },
+        { "TASK_LAMP", "Sala: apaga la lámpara para dormir" }
+    };
+
+    /// <summary>Text of one task of the routine.</summary>
+    public static string StoryLine(string taskId) => StoryLines.TryGetValue(taskId, out string line) ? line : taskId;
 
     private void Start()
     {
-        if (taskProgressText == null) BuildHud();
-        else SetUpHeadHud();
-        if (instructionText != null) instructionText.text = "NIVEL 5";
-        if (completionText != null) completionText.gameObject.SetActive(false);
+        HideSceneCanvas();
         TaskManager manager = FindFirstObjectByType<TaskManager>();
         if (manager != null) manager.RefreshHUD();
     }
 
-    private void SetUpHeadHud()
+    // The task list saved in the scene is replaced by the shared wrist HUD (LevelHud): its canvas is not drawn.
+    private void HideSceneCanvas()
     {
-        worldCanvas = GetComponent<Canvas>();
-        if (worldCanvas == null || worldCanvas.renderMode != RenderMode.WorldSpace) { worldCanvas = null; return; }
-
-        NeuroPhobiaHudFollow.Attach(worldCanvas, HudSize, HudOffset, HudWidthMeters);
-
-        Image background = GetComponent<Image>();
-        if (background == null) background = gameObject.AddComponent<Image>();
-        background.color = new Color(.04f, .06f, .08f, .87f);
-        background.raycastTarget = false;
-
-        Layout(instructionText, new Vector2(0f, 215f), new Vector2(700f, 70f), 44f);
-        Layout(taskProgressText, new Vector2(0f, 0f), new Vector2(700f, 380f), 34f);
-        Layout(completionText, new Vector2(0f, -215f), new Vector2(700f, 80f), 28f);
-    }
-
-    private static void Layout(TMP_Text label, Vector2 position, Vector2 size, float fontSize)
-    {
-        if (label == null) return;
-        RectTransform rect = label.rectTransform;
-        rect.anchoredPosition = position;
-        rect.sizeDelta = size;
-        label.fontSize = fontSize;
-    }
-
-    private void BuildHud()
-    {
-        GameObject panel = new GameObject("Nivel5_Tareas", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(Image));
-        NeuroPhobiaHudFollow.Attach(panel.GetComponent<Canvas>(), new Vector2(430, 420), HudOffset, 0.6f);
-        panel.GetComponent<Image>().color = new Color(.04f, .06f, .08f, .87f);
-        panel.GetComponent<Image>().raycastTarget = false;
-        taskProgressText = MakeText(panel.transform, "Tareas", new Vector2(0, 0), new Vector2(390, 245), 25);
-        instructionText = MakeText(panel.transform, "Nivel", new Vector2(0, 170), new Vector2(390, 50), 32);
-        completionText = MakeText(panel.transform, "Estado", new Vector2(0, -165), new Vector2(390, 60), 17);
-    }
-
-    private static TMP_Text MakeText(Transform parent, string name, Vector2 position, Vector2 size, float fontSize)
-    {
-        GameObject go = new GameObject(name, typeof(RectTransform));
-        go.transform.SetParent(parent, false);
-        RectTransform rect = go.GetComponent<RectTransform>();
-        rect.anchoredPosition = position;
-        rect.sizeDelta = size;
-        TextMeshProUGUI label = go.AddComponent<TextMeshProUGUI>();
-        label.fontSize = fontSize;
-        label.color = Color.white;
-        label.alignment = TextAlignmentOptions.Left;
-        label.raycastTarget = false;
-        return label;
+        Canvas canvas = GetComponent<Canvas>();
+        if (canvas != null) canvas.enabled = false;
+        if (completionText != null) completionText.gameObject.SetActive(false);
     }
 
     public void SetTasks(HashSet<string> done, int total)
     {
-        if (taskProgressText == null) return;
-        taskProgressText.text = "Tareas:\n" + Mark(done, "TASK_LAMP", "Apagar lámpara") + "\n" +
-            Mark(done, "TASK_DOOR", "Abrir puerta") + "\n" +
-            Mark(done, "TASK_FRIDGE", "Abrir nevera") + "\n" +
-            Mark(done, "TASK_WINDOW", "Abrir ventana") + "\n\n" +
-            $"Tareas completadas: {done.Count} / {total}" + "\n" + HowTo;
+        // The next pending task of the story is marked with an arrow; the order is suggested, not enforced.
+        var lines = new System.Text.StringBuilder();
+        bool nextMarked = false;
+        foreach (string id in TaskManager.StoryOrder)
+        {
+            string mark;
+            if (done.Contains(id)) mark = "<color=#7BD88F>[x]</color> ";
+            else if (!nextMarked) { mark = "<b>></b> "; nextMarked = true; }
+            else mark = "[ ] ";
+            if (lines.Length > 0) lines.Append('\n');
+            lines.Append(mark).Append(StoryLine(id));
+        }
+        string tasks = lines.ToString();
+
+        if (taskProgressText != null) taskProgressText.text = tasks;
+        LevelHud.SetMission(
+            Title,
+            "<size=85%>" + Story + "</size>\n<size=80%>" + tasks + "</size>\n" + HowTo,
+            total > 0 ? done.Count / (float)total : 0f);
     }
 
-    // Cómo se interactúa: lo que se puede abrir o pulsar se ilumina al apuntarlo (Level5HoverHighlight).
-    public const string HowTo = "<size=60%>Lo que se puede abrir se ilumina al apuntarlo. Mantén el grip o el gatillo y gira o desliza la mano; el interruptor de la lámpara se pulsa.</size>";
-
-    private static string Mark(HashSet<string> done, string id, string name) => (done.Contains(id) ? "[x] " : "[ ] ") + name;
+    // How to interact: what can be opened or pressed lights up when pointed at (Level5HoverHighlight).
+    public const string HowTo = "<size=70%>Lo que se puede abrir se ilumina al apuntarlo.</size>";
 
     public void ShowAvoidanceLimit(int maximum)
     {
-        if (completionText == null) return;
-        completionText.gameObject.SetActive(true);
-        completionText.text = $"Tareas completas. Se superó el límite de intentos de alejamiento ({maximum}). Puedes finalizar desde Pausa.";
+        string message = $"Tareas completas. Se superó el límite de intentos de alejamiento ({maximum}). Puedes finalizar desde Pausa.";
+        if (completionText != null) completionText.text = message;
+        LevelHud.SetMission(Title, message);
     }
 
     // Compatibilidad con el componente doméstico anterior, que se desactiva en la escena.

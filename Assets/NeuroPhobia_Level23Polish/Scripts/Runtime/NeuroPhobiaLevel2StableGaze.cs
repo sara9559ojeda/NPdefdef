@@ -29,11 +29,8 @@ public sealed class NeuroPhobiaLevel2StableGaze : MonoBehaviour
     private float lostGazeTime;
     private bool completed;
 
-    private Canvas hudCanvas;
-    private TMP_Text timerText;
-    private TMP_Text bestText;
-    private TMP_Text instructionText;
-    private Image progressFill;
+    // Shown on the wrist HUD instead of the mission while something is missing (for example the spider).
+    private string statusMessage;
 
     private const string BestKey = "NeuroPhobia_Level2_BestStableGaze";
 
@@ -46,7 +43,6 @@ public sealed class NeuroPhobiaLevel2StableGaze : MonoBehaviour
 
         FindSpider();
         if (metricsCollector == null) metricsCollector = FindFirstObjectByType<MetricsCollector>();
-        BuildHud();
         UpdateHud(false);
     }
 
@@ -57,31 +53,24 @@ public sealed class NeuroPhobiaLevel2StableGaze : MonoBehaviour
             return;
         }
 
-        // Pausa global (GlobalSessionUI): el tiempo no cuenta y el HUD no tapa el panel.
-        bool playing = GameStateManager.CurrentState == GameState.PLAYING;
-        if (hudCanvas != null && hudCanvas.gameObject.activeSelf != playing)
-        {
-            hudCanvas.gameObject.SetActive(playing);
-        }
-
-        if (!playing)
+        // Pausa global (GlobalSessionUI): el tiempo no cuenta.
+        if (GameStateManager.CurrentState != GameState.PLAYING)
         {
             return;
         }
+
+        statusMessage = null;
 
         // Mientras la pantalla Computador/RV está visible no cuenta tiempo.
         if (IsControlSelectorVisible())
         {
-            instructionText.text = "Selecciona Computador o Realidad Virtual";
             return;
         }
 
         Camera activeCamera = GetActiveGameplayCamera();
-        if (activeCamera != null) AttachHudToCamera(activeCamera);
 
         if (activeCamera == null)
         {
-            instructionText.text = "Buscando cámara activa...";
             return;
         }
 
@@ -91,7 +80,8 @@ public sealed class NeuroPhobiaLevel2StableGaze : MonoBehaviour
 
             if (spiderRenderer == null)
             {
-                instructionText.text = "Buscando la araña...";
+                statusMessage = "Buscando la araña...";
+                UpdateHud(false);
                 return;
             }
         }
@@ -400,219 +390,19 @@ public sealed class NeuroPhobiaLevel2StableGaze : MonoBehaviour
                selectorUi.activeInHierarchy;
     }
 
-    private void BuildHud()
-    {
-        GameObject root =
-            new GameObject("NP_Nivel2_HUD_MiradaEstable", typeof(RectTransform));
-
-        root.transform.SetParent(transform, false);
-
-        hudCanvas = root.AddComponent<Canvas>();
-        hudCanvas.renderMode = RenderMode.WorldSpace;
-        root.GetComponent<RectTransform>().sizeDelta = new Vector2(1280f, 720f);
-        hudCanvas.overrideSorting = true;
-        hudCanvas.sortingOrder = 32000;
-
-        CanvasScaler scaler =
-            root.AddComponent<CanvasScaler>();
-
-        scaler.uiScaleMode =
-            CanvasScaler.ScaleMode.ScaleWithScreenSize;
-
-        scaler.referenceResolution =
-            new Vector2(1280f, 720f);
-
-        scaler.screenMatchMode =
-            CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
-
-        scaler.matchWidthOrHeight = 0.5f;
-
-        root.AddComponent<GraphicRaycaster>();
-
-        GameObject panel =
-            new GameObject("Panel", typeof(RectTransform));
-
-        panel.transform.SetParent(root.transform, false);
-
-        RectTransform panelRect =
-            panel.GetComponent<RectTransform>();
-
-        // Esquina inferior izquierda para no tapar la araña.
-        panelRect.anchorMin = Vector2.zero;
-        panelRect.anchorMax = Vector2.zero;
-        panelRect.pivot = Vector2.zero;
-        panelRect.sizeDelta = new Vector2(560f, 150f);
-        panelRect.anchoredPosition = new Vector2(40f, 40f);
-
-        Image panelImage = panel.AddComponent<Image>();
-        panelImage.color = new Color(0.025f, 0.035f, 0.045f, 0.90f);
-
-        TMP_Text title =
-            CreateText(
-                panel.transform,
-                "Titulo",
-                23f,
-                FontStyles.Bold);
-
-        title.text = "NIVEL 2 · DISTANCIA SEGURA";
-
-        SetRect(
-            title.rectTransform,
-            new Vector2(0.03f, 0.76f),
-            new Vector2(0.97f, 0.98f));
-
-        timerText =
-            CreateText(
-                panel.transform,
-                "Temporizador",
-                21f,
-                FontStyles.Bold);
-
-        SetRect(
-            timerText.rectTransform,
-            new Vector2(0.03f, 0.55f),
-            new Vector2(0.97f, 0.78f));
-
-        bestText =
-            CreateText(
-                panel.transform,
-                "MejorIntento",
-                18f,
-                FontStyles.Normal);
-
-        SetRect(
-            bestText.rectTransform,
-            new Vector2(0.03f, 0.38f),
-            new Vector2(0.97f, 0.57f));
-
-        instructionText =
-            CreateText(
-                panel.transform,
-                "Instruccion",
-                18f,
-                FontStyles.Normal);
-
-        SetRect(
-            instructionText.rectTransform,
-            new Vector2(0.03f, 0.20f),
-            new Vector2(0.97f, 0.40f));
-
-        GameObject barBackground =
-            new GameObject(
-                "BarraFondo",
-                typeof(RectTransform));
-
-        barBackground.transform.SetParent(
-            panel.transform,
-            false);
-
-        RectTransform barRect =
-            barBackground.GetComponent<RectTransform>();
-
-        SetRect(
-            barRect,
-            new Vector2(0.06f, 0.07f),
-            new Vector2(0.94f, 0.15f));
-
-        Image backgroundImage =
-            barBackground.AddComponent<Image>();
-
-        backgroundImage.color =
-            new Color(0.18f, 0.22f, 0.25f, 0.95f);
-
-        GameObject fill =
-            new GameObject(
-                "Progreso",
-                typeof(RectTransform));
-
-        fill.transform.SetParent(
-            barBackground.transform,
-            false);
-
-        RectTransform fillRect =
-            fill.GetComponent<RectTransform>();
-
-        fillRect.anchorMin = Vector2.zero;
-        fillRect.anchorMax = Vector2.one;
-        fillRect.offsetMin = Vector2.zero;
-        fillRect.offsetMax = Vector2.zero;
-
-        progressFill = fill.AddComponent<Image>();
-        progressFill.color =
-            new Color(0.08f, 0.78f, 0.72f, 1f);
-
-        progressFill.type = Image.Type.Filled;
-        progressFill.fillMethod = Image.FillMethod.Horizontal;
-        progressFill.fillOrigin = 0;
-        progressFill.fillAmount = 0f;
-    }
-
-    private static TMP_Text CreateText(
-        Transform parent,
-        string name,
-        float fontSize,
-        FontStyles style)
-    {
-        GameObject go =
-            new GameObject(
-                name,
-                typeof(RectTransform));
-
-        go.transform.SetParent(parent, false);
-
-        TextMeshProUGUI text =
-            go.AddComponent<TextMeshProUGUI>();
-
-        text.fontSize = fontSize;
-        text.fontStyle = style;
-        text.alignment = TextAlignmentOptions.Center;
-        text.color = Color.white;
-        text.textWrappingMode = TextWrappingModes.Normal;
-        text.raycastTarget = false;
-
-        return text;
-    }
-
-    private static void SetRect(
-        RectTransform rect,
-        Vector2 min,
-        Vector2 max)
-    {
-        rect.anchorMin = min;
-        rect.anchorMax = max;
-        rect.offsetMin = Vector2.zero;
-        rect.offsetMax = Vector2.zero;
-    }
-
+    // Mission on the wrist HUD; the ring near the centre of the view fills while the look is being counted.
     private void UpdateHud(bool looking)
     {
-        if (timerText == null)
-        {
-            return;
-        }
+        float progress = requiredSeconds > 0f ? Mathf.Clamp01(currentTime / requiredSeconds) : 0f;
 
-        timerText.text =
-            "Mirada continua: " +
-            currentTime.ToString("0.0", CultureInfo.InvariantCulture) +
-            " / " +
-            requiredSeconds.ToString("0", CultureInfo.InvariantCulture) +
-            " s";
+        string mission = statusMessage ??
+            "Mantén la mirada en la araña del frasco " +
+            requiredSeconds.ToString("0", CultureInfo.InvariantCulture) + " s seguidos.\n" +
+            "Mirada continua: " + currentTime.ToString("0.0", CultureInfo.InvariantCulture) + " s · " +
+            "Mejor intento: " + bestAttempt.ToString("0.0", CultureInfo.InvariantCulture) + " s";
 
-        bestText.text =
-            "Mejor intento: " +
-            bestAttempt.ToString("0.0", CultureInfo.InvariantCulture) +
-            " s";
-
-        instructionText.text =
-            looking
-                ? "Bien. Mantén la mirada en la araña."
-                : "Mira la araña · Stick: moverte · A: sentarte";
-
-        if (progressFill != null)
-        {
-            progressFill.fillAmount =
-                Mathf.Clamp01(currentTime / requiredSeconds);
-        }
+        LevelHud.SetMission("NIVEL 2 · DISTANCIA SEGURA", mission, progress);
+        LevelHud.SetGaze(progress, looking || currentTime > 0f);
     }
 
     private void SaveBest()
@@ -641,28 +431,8 @@ public sealed class NeuroPhobiaLevel2StableGaze : MonoBehaviour
             SessionManager.Instance.AddLevelMetrics(metrics);
         }
 
-        if (hudCanvas != null)
-        {
-            hudCanvas.gameObject.SetActive(false);
-        }
-
+        LevelHud.SetGaze(0f, false);
         GlobalSessionUI.CompleteLevel(2);
-    }
-
-    private void AttachHudToCamera(Camera camera)
-    {
-        if (camera == null) return;
-        Attach(hudCanvas, camera, 1.1f, 0.0012f);
-    }
-
-    private static void Attach(Canvas canvas, Camera camera, float distance, float scale)
-    {
-        if (canvas == null || canvas.transform.parent == camera.transform) return;
-        canvas.transform.SetParent(camera.transform, false);
-        canvas.transform.localPosition = new Vector3(0f, 0f, distance);
-        canvas.transform.localRotation = Quaternion.identity;
-        canvas.transform.localScale = Vector3.one * scale;
-        canvas.worldCamera = camera;
     }
 
     private static GameObject FindSceneObject(string exactName)

@@ -87,9 +87,12 @@ namespace NeuroPhobia.Tests
             Assert.IsNotNull(events, scene + ": sin EventSystem.");
             Assert.IsNotNull(events.GetComponent<XRUIInputModule>(), scene + ": el EventSystem no tiene XRUIInputModule.");
 
-            // El SUDS «antes de empezar» debe estar visible al cargar.
+            // El SUDS «antes de empezar» se abre cuando termina la aparición del jugador (vista ya abierta).
             GameObject suds = (GameObject)Get(ui, "sudsPanel");
-            Assert.IsTrue(suds.activeSelf, scene + ": el SUDS «antes» debería estar abierto.");
+            float waitStart = Time.realtimeSinceStartup;
+            while (!suds.activeSelf && Time.realtimeSinceStartup - waitStart < 10f) yield return null;
+            Assert.IsTrue(suds.activeSelf, scene + ": el SUDS «antes» debería abrirse al terminar la aparición.");
+            Assert.IsTrue((bool)Static("PlayerSpawnSequence", "Opened"), scene + ": el SUDS se abrió antes de abrirse la vista.");
             yield return null;
 
             Camera head = canvas.worldCamera;
@@ -106,9 +109,13 @@ namespace NeuroPhobia.Tests
                 yield return null;
                 yield return null;
             }
+            // Distancias en metros percibidos: cada nivel tiene su escala de rig y el panel debe verse igual en todos.
+            float rigScale = (float)Game("NeuroPhobiaWorldPanel").GetMethod("RigScale").Invoke(null, new object[] { head.transform });
             Vector3 toPanel = canvas.transform.position - head.transform.position;
-            Assert.That(toPanel.magnitude, Is.InRange(0.55f, 2.1f), scene + ": el panel está a " + toPanel.magnitude.ToString("0.00") + " m.");
-            Assert.That(canvas.transform.position.y - head.transform.position.y, Is.InRange(-0.3f, 0.1f), scene + ": el panel no está a la altura de los ojos.");
+            Assert.That(toPanel.magnitude / rigScale, Is.InRange(0.55f, 2.1f), scene + ": el panel está a " + (toPanel.magnitude / rigScale).ToString("0.00") + " m percibidos.");
+            Assert.That((canvas.transform.position.y - head.transform.position.y) / rigScale, Is.InRange(-0.3f, 0.1f), scene + ": el panel no está a la altura de los ojos.");
+            Assert.AreEqual(1.25f, canvas.GetComponent<RectTransform>().rect.width * canvas.transform.lossyScale.x / rigScale * 1.7f / (toPanel.magnitude / rigScale), 0.05f,
+                scene + ": el panel no tiene el mismo tamaño aparente que en los demás niveles.");
             Vector3 flatLook = Vector3.ProjectOnPlane(head.transform.forward, Vector3.up);
             Vector3 flatPanel = Vector3.ProjectOnPlane(toPanel, Vector3.up);
             Assert.Less(Vector3.Angle(flatLook, flatPanel), 20f, scene + ": el panel no está delante.");
@@ -135,7 +142,7 @@ namespace NeuroPhobia.Tests
             Vector3 buttonCenter = target.GetComponent<RectTransform>().TransformPoint(target.GetComponent<RectTransform>().rect.center);
             foreach (float side in new[] { -0.25f, 0.25f })
             {
-                Vector3 hand = head.transform.position + head.transform.right * side - Vector3.up * 0.3f;
+                Vector3 hand = head.transform.position + (head.transform.right * side - Vector3.up * 0.3f) * rigScale;
                 var data = new TrackedDeviceEventData(events)
                 {
                     rayPoints = new List<Vector3> { hand, hand + (buttonCenter - hand).normalized * 5f },
